@@ -9,9 +9,18 @@ mod mouse_hook;
 mod screen_capture;
 #[cfg(windows)]
 mod windows_api;
+pub mod speech;
 
+use std::sync::Arc;
+
+use speech::{Pass, Speech};
+use tauri::ipc::{InvokeBody, Request};
+use tauri::path::BaseDirectory;
 use tauri::webview::{PermissionKind, PermissionResponse};
-use tauri::{Manager, WebviewWindow};
+use tauri::{Manager, State, WebviewWindow};
+
+// Bundled with the app (scripts/fetch-models.mjs)
+const SPEECH_MODEL: &str = "models/ggml-medium.en-q8_0.bin";
 
 #[cfg(windows)]
 const SNIP_WINDOW: &str = "snip";
@@ -111,9 +120,52 @@ async fn open_snip_window(app: tauri::AppHandle) -> Result<(), String> {
     windows_api::show_without_focus(&window)
 }
 
+/// Load the speech model (see speech.rs). Returns what it runs on.
+#[tauri::command]
+async fn speech_load(app: tauri::AppHandle, speech: State<'_, Arc<Speech>>) -> Result<String, String> {
+    let path = app.path().resolve(SPEECH_MODEL, BaseDirectory::Resource).map_err(|e| e.to_string())?;
+    let speech = Arc::clone(&speech);
+    tauri::async_runtime::spawn_blocking(move || speech.load(&path))
+        .await
+        .map_err(|e| format!("Speech thread failed: {}", e))?
+}
+
+/// One recognition pass. Binary, so audio doesn't go through JSON: the body is
+/// the prompt's length (u32 LE), the prompt (UTF-8), then 16 kHz mono f32 LE
+/// samples. Headers: x-max-tokens, and x-final ("1" for the text that's sent).
+/// Resolves to the text, or null if the pass was cancelled.
+#[tauri::command]
+async fn speech_transcribe(request: Request<'_>, speech: State<'_, Arc<Speech>>) -> Result<Option<String>, String> {
+    let InvokeBody::Raw(body) = request.body() else {
+        return Err("Expected audio".to_string());
+    };
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let max_tokens = header("x-max-tokens").and_then(|v| v.parse().ok()).unwrap_or(220);
+    let final_pass = header("x-final").as_deref() == Some("1");
+    let prompt_len = body.get(..4).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize).ok_or("Bad request")?;
+    let prompt = String::from_utf8_lossy(body.get(4..4 + prompt_len).ok_or("Bad request")?).into_owned();
+    let audio: Vec<f32> = body[4 + prompt_len..]
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+        .collect();
+    let speech = Arc::clone(&speech);
+    tauri::async_runtime::spawn_blocking(move || {
+        speech.transcribe(&Pass { audio: &audio, prompt: &prompt, max_tokens, final_pass })
+    })
+    .await
+    .map_err(|e| format!("Speech thread failed: {}", e))?
+}
+
+/// Stop the passes running or waiting (their text is no longer wanted)
+#[tauri::command]
+fn speech_cancel(speech: State<'_, Arc<Speech>>) {
+    speech.cancel();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(Arc::new(Speech::default()))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -157,6 +209,9 @@ pub fn run() {
             uninstall_keyboard_hook,
             capture_screen,
             open_snip_window,
+            speech_load,
+            speech_transcribe,
+            speech_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

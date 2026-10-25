@@ -1,10 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- toyol's icon: a devilish goblin. Regenerate every size from it with
+       npx tauri icon app-icon.svg (then copy icons/128x128.png to public/icon.png) -->
   <defs>
-    <linearGradient id="bubble" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#5AB0FF"/>
-      <stop offset="1" stop-color="#2F6BFF"/>
+    <linearGradient id="skin" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#FF6A4D"/>
+      <stop offset="1" stop-color="#C8182E"/>
     </linearGradient>
+    <linearGradient id="horn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF4DC"/>
+      <stop offset="1" stop-color="#D9B57A"/>
+    </linearGradient>
+    <radialGradient id="eye" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0" stop-color="#FFF6B0"/>
+      <stop offset="1" stop-color="#FFC21F"/>
+    </radialGradient>
   </defs>
-  <rect x="32" y="32" width="960" height="960" rx="220" fill="#15171C"/>
-  <path d="M232 300a96 96 0 0 1 96-96h368a96 96 0 0 1 96 96v284a96 96 0 0 1-96 96H486L330 806V680a96 96 0 0 1-98-96Z" fill="url(#bubble)"/>
-  <path d="M470 262v236a74 74 0 0 0 74 74h56M394 358h196" fill="none" stroke="#FFFFFF" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/></svg>
+
+  <rect x="32" y="32" width="960" height="960" rx="200" fill="#16181D"/>
+
+  <!-- Horns -->
+  <path d="M378 392 C300 330 252 236 270 118 C336 204 410 262 478 312 Z" fill="url(#horn)"/>
+  <path d="M646 392 C724 330 772 236 754 118 C688 204 614 262 546 312 Z" fill="url(#horn)"/>
+
+  <!-- Pointed ears -->
+  <path d="M300 496 C240 474 184 440 138 398 C150 488 214 566 306 598 Z" fill="#D92A36"/>
+  <path d="M724 496 C784 474 840 440 886 398 C874 488 810 566 718 598 Z" fill="#D92A36"/>
+  <path d="M286 520 C246 504 214 484 190 462 C204 510 240 548 292 566 Z" fill="#8E0F1E"/>
+  <path d="M738 520 C778 504 810 484 834 462 C820 510 784 548 732 566 Z" fill="#8E0F1E"/>
+
+  <!-- Head, tapering to a pointed chin -->
+  <path d="M512 300 C664 300 744 396 744 528 C744 684 622 806 512 862 C402 806 280 684 280 528 C280 396 360 300 512 300 Z" fill="url(#skin)"/>
+
+  <!-- Glowing eyes with slit pupils -->
+  <ellipse cx="428" cy="566" rx="56" ry="34" transform="rotate(22 428 566)" fill="url(#eye)"/>
+  <ellipse cx="596" cy="566" rx="56" ry="34" transform="rotate(-22 596 566)" fill="url(#eye)"/>
+  <ellipse cx="434" cy="570" rx="10" ry="26" fill="#2A0508"/>
+  <ellipse cx="590" cy="570" rx="10" ry="26" fill="#2A0508"/>
+
+  <!-- Scowling brows -->
+  <path d="M358 486 L488 540" stroke="#3A0A10" stroke-width="38" stroke-linecap="round"/>
+  <path d="M666 486 L536 540" stroke="#3A0A10" stroke-width="38" stroke-linecap="round"/>
+
+  <!-- Wicked grin with fangs -->
+  <path d="M372 660 C436 724 588 724 652 660 C608 772 416 772 372 660 Z" fill="#2A0508"/>
+  <path d="M424 690 L458 700 L438 746 Z" fill="#FFF4DC"/>
+  <path d="M600 690 L566 700 L586 746 Z" fill="#FFF4DC"/>
+</svg>

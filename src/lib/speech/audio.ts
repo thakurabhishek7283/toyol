@@ -11,7 +11,9 @@ export const SAMPLE_RATE = 16000; // what Whisper expects
 const FRAME = 320; // 20 ms analysis frames
 // Speech is padded by this much on each side after trimming, so soft word
 // starts and endings ("h" in "how", final "s") survive
-const PAD_SECONDS = 0.25;
+export const PAD_SECONDS = 0.25;
+// A gap between words at least this long is a pause: somewhere to cut
+const MIN_PAUSE_SECONDS = 0.3;
 // Shorter than this isn't a question, it's a click or a breath
 export const MIN_SPEECH_SECONDS = 0.3;
 // Whisper's window is 30 s; chunks stay a little under it
@@ -42,6 +44,45 @@ function percentile(values: Float32Array, p: number): number {
   return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
 }
 
+/** The frame level above which it's speech, or null if nothing stands out (see findSpeech) */
+function speechThreshold(levels: Float32Array): number | null {
+  if (levels.length === 0) return null;
+  const floor = percentile(levels, 0.1);
+  const loud = percentile(levels, 0.95);
+  // Nothing stands out from the floor (silence, or steady noise): no speech.
+  // 0.004 is about -48 dBFS, below any voice on a working microphone.
+  if (loud < 0.004 || loud < floor * 3) return null;
+  return Math.max(floor * 2.5, floor + (loud - floor) * 0.12, 0.002);
+}
+
+/**
+ * The middle of the last pause in samples [from, to) (an offset), or null if
+ * there's none: where speech can be cut without cutting a word in two. Speech
+ * must come before and after the pause. The level that counts as speech is
+ * judged on all of `samples`.
+ */
+export function findPause(samples: Float32Array, from = 0, to = samples.length): number | null {
+  const levels = frameLevels(samples);
+  const threshold = speechThreshold(levels);
+  if (threshold === null) return null;
+  const minFrames = Math.ceil((MIN_PAUSE_SECONDS * SAMPLE_RATE) / FRAME);
+  const first = Math.ceil(from / FRAME);
+  const last = Math.min(levels.length, Math.floor(to / FRAME)) - 1;
+  let quiet = 0; // quiet frames in a row, ending at f - 1
+  for (let f = last; f >= first; f--) {
+    if (levels[f] < threshold) {
+      quiet++;
+      continue;
+    }
+    // A loud frame: the quiet run after it is a pause if it's long enough and
+    // isn't the tail end of the search
+    const after = f + 1;
+    if (quiet >= minFrames && after + quiet <= last) return (after + quiet / 2) * FRAME;
+    quiet = 0;
+  }
+  return null;
+}
+
 /**
  * Where speech is, as sample offsets [start, end), or null if there's none.
  * The threshold adapts to the room: a frame is speech when it's well above the
@@ -50,13 +91,8 @@ function percentile(values: Float32Array, p: number): number {
  */
 export function findSpeech(samples: Float32Array): { start: number; end: number } | null {
   const levels = frameLevels(samples);
-  if (levels.length === 0) return null;
-  const floor = percentile(levels, 0.1);
-  const loud = percentile(levels, 0.95);
-  // Nothing stands out from the floor (silence, or steady noise): no speech.
-  // 0.004 is about -48 dBFS, below any voice on a working microphone.
-  if (loud < 0.004 || loud < floor * 3) return null;
-  const threshold = Math.max(floor * 2.5, floor + (loud - floor) * 0.12, 0.002);
+  const threshold = speechThreshold(levels);
+  if (threshold === null) return null;
 
   let first = -1;
   let last = -1;

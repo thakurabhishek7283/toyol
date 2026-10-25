@@ -57,3 +57,9 @@ export function snipStep(state: SnipState, input: SnipInput): { state: SnipState
   // The second click. Too close to the first (a double click) starts over from there.
   return bigEnough(region) ? { state, done: region } : { state: { phase: 'second', anchor: input.at, pressed: true } };
 }
+
+/** A whole click at `at`: how Enter picks a corner where the arrow keys put the crosshair */
+export function snipClick(state: SnipState, at: Point): { state: SnipState; done?: Rect | null } {
+  const pressed = snipStep(state, { type: 'down', at, button: 0 });
+  return pressed.done !== undefined ? pressed : snipStep(pressed.state, { type: 'up', at, button: 0 });
+}

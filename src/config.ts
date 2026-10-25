@@ -1,6 +1,9 @@
 // Settings, saved in the app's config.json (useConfig)
 
+import type { Tone } from './lib/ai';
+
 export type SpeechEngine = 'local' | 'cloud';
+export type AutoScroll = 'off' | 'slow' | 'medium' | 'fast';
 
 export interface Config {
   // Window position (physical px; null until first placed) and size (logical px)
@@ -16,6 +19,7 @@ export interface Config {
   bgColor: string;
   textColor: string;
   hideFromCapture: boolean; // left out of screen shares, recordings and screenshots
+  autoScroll: AutoScroll; // a new answer scrolls by at this reading pace (useAutoScroll)
 
   // Keyboard shortcuts changed in Settings, by HotkeyId (lib/hotkeys); the rest keep their defaults
   hotkeys: Record<string, string>;
@@ -24,12 +28,15 @@ export interface Config {
   aiEndpoint: string; // base URL, e.g. https://api.openai.com/v1
   aiModel: string; // model or deployment name
   aiApiKey: string;
+  tone: Tone; // how the answers are worded (lib/ai)
+  customTone: string; // the user's own description, for tone 'custom'
 
   // Voice input
   speechEngine: SpeechEngine; // on this PC, or the AI service's transcription
   cloudSpeechModel: string; // e.g. gpt-4o-transcribe, or an Azure deployment name
   vocabulary: string; // names and jargon to recognize, comma-separated; also used by autocomplete
   micId: string; // '' = the system default
+  holdToTalk: boolean; // listen only while the voice shortcut (or mic button) is held; else a tap also toggles
   autoSend: boolean; // send what was said (or a screenshot) right away, instead of waiting for Enter
 }
 
@@ -60,14 +67,18 @@ export const DEFAULT_CONFIG: Config = {
   bgColor: '#16181D',
   textColor: '#ECEEF2',
   hideFromCapture: true,
+  autoScroll: 'slow',
   hotkeys: {},
   aiEndpoint: DEV_AI.endpoint,
   aiModel: DEV_AI.model,
   aiApiKey: DEV_AI.apiKey,
+  tone: 'default',
+  customTone: '',
   speechEngine: 'local',
   cloudSpeechModel: 'gpt-4o-transcribe',
   vocabulary: DEFAULT_VOCABULARY,
   micId: '',
+  holdToTalk: false,
   autoSend: true,
 };
 

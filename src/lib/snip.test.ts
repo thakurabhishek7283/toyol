@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { snipStep, type SnipInput, type SnipState } from './snip';
+import { snipClick, snipStep, type SnipInput, type SnipState } from './snip';
 
 const down = (x: number, y: number, button = 0): SnipInput => ({ type: 'down', at: { x, y }, button });
 const up = (x: number, y: number, button = 0): SnipInput => ({ type: 'up', at: { x, y }, button });
@@ -43,5 +43,19 @@ describe('snipStep', () => {
   it('needs some width and height', () => {
     // A thin line isn't a region: the second click starts over
     expect(run([down(10, 10), up(10, 10), down(400, 12)])).toMatchObject({ phase: 'second' });
+  });
+});
+
+describe('snipClick', () => {
+  it('takes the region between two corners picked with the keyboard', () => {
+    const first = snipClick({ phase: 'first' }, { x: 100, y: 50 });
+    expect(first.done).toBeUndefined();
+    expect(first.state).toEqual({ phase: 'second', anchor: { x: 100, y: 50 }, pressed: false });
+    expect(snipClick(first.state, { x: 300, y: 200 }).done).toEqual({ left: 100, top: 50, width: 200, height: 150 });
+  });
+
+  it('starts over when the second corner is the first one', () => {
+    const first = snipClick({ phase: 'first' }, { x: 100, y: 50 });
+    expect(snipClick(first.state, { x: 100, y: 50 })).toEqual({ state: { phase: 'second', anchor: { x: 100, y: 50 }, pressed: false } });
   });
 });

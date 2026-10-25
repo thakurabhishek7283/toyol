@@ -16,6 +16,9 @@ export type HotkeyId =
   | 'newChat'
   | 'cycleOpacity'
   | 'quit'
+  | 'move'
+  | 'scrollUp'
+  | 'scrollDown'
   | 'settings'
   | 'fontUp'
   | 'fontDown'
@@ -42,6 +45,9 @@ export const HOTKEY_DEFS: HotkeyDef[] = [
   { id: 'toggleVisibility', action: 'Show / hide', scope: 'global', default: `${ALL}+KeyH` },
   { id: 'newChat', action: 'New conversation', scope: 'global', default: `${ALL}+KeyN` },
   { id: 'cycleOpacity', action: 'Cycle opacity', scope: 'global', default: `${ALL}+KeyO` },
+  { id: 'move', action: 'Move or resize the panel with the arrow keys', scope: 'global', default: `${ALL}+KeyM` },
+  { id: 'scrollUp', action: 'Scroll the answers up', scope: 'global', default: `${ALL}+PageUp` },
+  { id: 'scrollDown', action: 'Scroll the answers down', scope: 'global', default: `${ALL}+PageDown` },
   { id: 'quit', action: 'Quit', scope: 'global', default: `${ALL}+KeyQ` },
   { id: 'settings', action: 'Settings', scope: 'focused', default: 'Ctrl+Comma' },
   { id: 'fontUp', action: 'Larger text', scope: 'focused', default: 'Ctrl+Equal' },
@@ -100,6 +106,7 @@ const KEY_NAMES: Record<string, string> = {
   Comma: ',', Period: '.', Minus: '-', Equal: '=', Slash: '/', Backslash: '\\',
   BracketLeft: '[', BracketRight: ']', Semicolon: ';', Quote: "'", Backquote: '`',
   ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Escape: 'Esc',
+  PageUp: 'PgUp', PageDown: 'PgDn',
 };
 
 function keyName(code: string): string {

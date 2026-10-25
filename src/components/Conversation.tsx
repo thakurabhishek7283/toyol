@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import type { AutoScroll } from '../config';
+import { useAutoScroll } from '../hooks/useAutoScroll';
 import type { Turn } from '../hooks/useChat';
 import { parseAnswer } from '../lib/answer';
 import { renderMarkdown } from '../lib/markdown';
@@ -8,7 +10,9 @@ import { Icon } from './Icon';
 
 interface ConversationProps {
   turns: Turn[];
+  scrollRef: RefObject<HTMLDivElement | null>; // the scrolling list, for the scroll shortcuts
   empty: ReactNode; // shown before the first question
+  autoScroll: AutoScroll; // how a new answer scrolls by
   onAsk: (question: string) => void; // a follow-up clicked
 }
 
@@ -16,20 +20,15 @@ interface ConversationProps {
 const LOCKED_SCROLL_PX = 60;
 
 /** The questions and answers, newest at the bottom */
-function Conversation({ turns, empty, onAsk }: ConversationProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const lastId = turns[turns.length - 1]?.id;
+function Conversation({ turns, scrollRef, empty, autoScroll, onAsk }: ConversationProps) {
+  const last = turns[turns.length - 1];
+  const lastId = last?.id;
   // Older answers fold down to the question and the glance; the latest shows in full.
   // Clicking "Details" flips that for a turn.
   const [flipped, setFlipped] = useState<Set<number>>(new Set());
 
-  // A new question: bring its top into view, and keep it there while the answer
-  // streams in, so the at-a-glance part stays on screen
-  useEffect(() => {
-    if (lastId === undefined) return;
-    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-turn="${lastId}"]`);
-    el?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }, [lastId]);
+  // A new question: its top comes into view, then the answer scrolls by as it's read
+  useAutoScroll(scrollRef, lastId, last?.state === 'thinking' || last?.state === 'writing', autoScroll);
 
   // Ctrl+wheel over the locked panel scrolls the answers (see mouse_hook.rs)
   useEffect(() => {
@@ -39,7 +38,7 @@ function Conversation({ turns, empty, onAsk }: ConversationProps) {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, []);
+  }, [scrollRef]);
 
   // Code blocks' copy buttons; links never navigate the panel
   const onClick = (e: React.MouseEvent) => {
@@ -63,7 +62,8 @@ function Conversation({ turns, empty, onAsk }: ConversationProps) {
   });
 
   return (
-    <div className="conversation" ref={scrollRef} onClick={onClick}>
+    // Focusable, so the arrows and Page Up / Down scroll it
+    <div className="conversation" ref={scrollRef} onClick={onClick} tabIndex={0} aria-label="Answers">
       {turns.length === 0 ? empty : turns.map((turn) => (
         <TurnView
           key={turn.id}

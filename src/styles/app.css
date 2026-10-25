@@ -28,6 +28,11 @@
   font-size: var(--fs);
   user-select: none;
 }
+/* Being moved with the arrow keys (useMovePanel) */
+.app.moving {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
 /* Text on a see-through panel: a soft shadow in the panel's color keeps it
    readable over whatever is behind */
 .app .conversation,
@@ -139,6 +144,10 @@ kbd {
   padding: 2px 14px 12px;
   user-select: text;
 }
+/* It clips what's outside it, so the focus ring goes inside */
+.conversation:focus-visible {
+  outline-offset: -2px;
+}
 
 .conversation::-webkit-scrollbar,
 .settings-body::-webkit-scrollbar {
@@ -157,6 +166,11 @@ kbd {
 }
 .turn + .turn {
   border-top: 1px solid var(--line);
+}
+/* The latest turn fills the panel at least, so a new question can be put at
+   the top (useAutoScroll) however short its answer, with the older ones above */
+.turn:last-child {
+  min-height: 100%;
 }
 
 /* The question as understood */
@@ -473,10 +487,26 @@ kbd {
 .status.note {
   white-space: normal;
 }
+.status.moving {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  color: var(--fg);
+}
 .status-hint {
   overflow: hidden;
   color: var(--fg-3);
   text-overflow: ellipsis;
+}
+/* What's been heard so far: the last three lines, newest at the bottom */
+.live-text {
+  display: flex;
+  flex-direction: column-reverse;
+  max-height: calc(3 * 1.4em);
+  overflow: hidden;
+  padding: 0 4px;
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.4;
 }
 .rec-dot {
   flex-shrink: 0;
@@ -734,6 +764,10 @@ kbd {
   flex-direction: column;
   background: var(--bg);
 }
+/* Focused only so Tab starts there */
+.settings:focus {
+  outline: none;
+}
 .settings-header {
   display: flex;
   align-items: center;
@@ -921,6 +955,10 @@ kbd {
 }
 .swatch.custom:not(.on) {
   background: conic-gradient(#ff5a52, #ffd866, #7ee0a1, #8cc8ff, #b48cff, #ff5a52);
+}
+.swatch.custom:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .swatch.custom input {
   position: absolute;

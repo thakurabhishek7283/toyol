@@ -1,5 +1,6 @@
 // Microphone recording. The microphone is opened when listening starts and
-// released when it stops; audio stays in memory until it's transcribed.
+// released when it stops; audio stays in memory, transcribed as it comes in
+// (lib/speech/live.ts) or once it stops.
 
 import { SAMPLE_RATE } from './audio';
 
@@ -10,7 +11,10 @@ const FRAME_SIZE = 2048;
 interface Recording {
   stream: MediaStream;
   context: AudioContext;
-  frames: Float32Array[];
+  // Room for the longest recording, filled as it goes, so the recording so
+  // far can be read (recordedAudio) without copying it
+  samples: Float32Array;
+  length: number;
 }
 
 let recording: Recording | null = null;
@@ -39,15 +43,15 @@ export async function startRecording(micId: string, onLevel: (level: number) => 
   // ScriptProcessorNode is deprecated, but an AudioWorklet would need its own
   // module file for what is a copy of each frame
   const processor = context.createScriptProcessor(FRAME_SIZE, 1, 1);
-  const frames: Float32Array[] = [];
-  const maxFrames = Math.ceil((MAX_RECORDING_SECONDS * SAMPLE_RATE) / FRAME_SIZE);
+  const current: Recording = { stream, context, samples: new Float32Array(MAX_RECORDING_SECONDS * SAMPLE_RATE), length: 0 };
   processor.onaudioprocess = (e) => {
-    const frame = new Float32Array(e.inputBuffer.getChannelData(0));
-    if (frames.length >= maxFrames) {
+    const frame = e.inputBuffer.getChannelData(0);
+    if (current.length + frame.length > current.samples.length) {
       onLimit();
       return;
     }
-    frames.push(frame);
+    current.samples.set(frame, current.length);
+    current.length += frame.length;
     let sum = 0;
     for (const x of frame) sum += x * x;
     // RMS on a rough log scale: -60 dB at the bottom of the meter, 0 dB at the top
@@ -56,7 +60,12 @@ export async function startRecording(micId: string, onLevel: (level: number) => 
   };
   source.connect(processor);
   processor.connect(context.destination); // a processor only runs while connected
-  recording = { stream, context, frames };
+  recording = current;
+}
+
+/** The recording so far (a view: it isn't copied), or null if not recording */
+export function recordedAudio(): Float32Array | null {
+  return recording ? recording.samples.subarray(0, recording.length) : null;
 }
 
 /** Stop and release the microphone. The samples, or null if not recording. */
@@ -66,14 +75,7 @@ export async function stopRecording(): Promise<Float32Array | null> {
   recording = null;
   current.stream.getTracks().forEach((track) => track.stop());
   await current.context.close();
-
-  const audio = new Float32Array(current.frames.reduce((n, f) => n + f.length, 0));
-  let offset = 0;
-  for (const frame of current.frames) {
-    audio.set(frame, offset);
-    offset += frame.length;
-  }
-  return audio;
+  return current.samples.subarray(0, current.length);
 }
 
 export const isRecording = () => recording !== null;

@@ -1,0 +1,18 @@
+# Building whisper.cpp (whisper-rs-sys, for src/speech.rs) on Windows.
+
+[build]
+# whisper.cpp's Vulkan build nests files about 215 characters deep in the build
+# folder, and MSBuild fails past Windows' 260-character path limit, so builds go
+# to a short folder instead of src-tauri/target
+target-dir = "C:/Users/thaku/.toyol"
+
+# Where the build tools are on this PC. Variables already set win (force =
+# false), so another PC sets its own instead of editing these.
+[env]
+# The Vulkan SDK (https://vulkan.lunarg.com): headers, loader and shader compiler
+VULKAN_SDK = { value = "C:\\VulkanSDK\\1.4.363.0", force = false }
+# CMake, here the copy that comes with Visual Studio
+CMAKE = { value = "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe", force = false }
+# libclang, which generates the Rust bindings to whisper.cpp (from LLVM, or the
+# libclang package on PyPI)
+LIBCLANG_PATH = { value = "C:\\Users\\thaku\\.toyol-libclang", force = false }

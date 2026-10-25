@@ -1,9 +1,22 @@
-import { useEffect, useState } from 'react';
-import { MAX_FONT_SIZE, MIN_FONT_SIZE, PANEL_COLORS, readableTextOn, TEXT_COLORS, type Config } from '../config';
+import { useEffect, useRef, useState } from 'react';
+import { MAX_FONT_SIZE, MIN_FONT_SIZE, PANEL_COLORS, readableTextOn, TEXT_COLORS, type AutoScroll, type Config } from '../config';
+import type { Tone } from '../lib/ai';
 import { checkBinding, comboFromEvent, displayAccelerator, HOTKEY_DEFS, resolveHotkeys, type HotkeyId } from '../lib/hotkeys';
 import { listMicrophones } from '../lib/speech/recorder';
 import type { ModelStatus } from '../lib/speech/engine';
 import { Icon } from './Icon';
+
+const AUTO_SCROLL_OPTIONS: [AutoScroll, string][] = [['off', 'Off'], ['slow', 'Slow'], ['medium', 'Medium'], ['fast', 'Fast']];
+
+// Each tone, and what it sounds like
+const TONE_OPTIONS: [Tone, string, string][] = [
+  ['default', 'Default', 'Direct and to the point.'],
+  ['conversational', 'Conversational', 'Natural, like a colleague talking it through: easy to say out loud.'],
+  ['professional', 'Professional', 'Polished, precise and formal.'],
+  ['simple', 'Simple', 'Everyday words, jargon explained, analogies.'],
+  ['technical', 'Technical', 'Exact terms and specifics, for an expert.'],
+  ['custom', 'Your own', 'Describe it below.'],
+];
 
 interface SettingsProps {
   config: Config;
@@ -17,18 +30,24 @@ interface SettingsProps {
 function Settings({ config, setConfig, modelStatus, onRecordingShortcut, onClose }: SettingsProps) {
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [showKey, setShowKey] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Opened from the keyboard: start there, so Tab goes through the settings
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     listMicrophones().then(setMics).catch(() => {});
   }, []);
 
   const modelNote =
-    modelStatus.state === 'loading' ? `Loading the speech model… ${Math.round(modelStatus.progress)}%`
+    modelStatus.state === 'loading' ? 'Loading the speech model…'
       : modelStatus.state === 'failed' ? "The speech model couldn't load. Use the AI service instead, or restart toyol."
-        : 'Whisper small, on this PC: nothing you say leaves it.';
+        : `Whisper medium, on this PC${modelStatus.device ? ` (${modelStatus.device})` : ''}: transcribed as you talk, and nothing you say leaves it.`;
 
   return (
-    <div className="settings">
+    <div className="settings" ref={rootRef} tabIndex={-1} role="region" aria-label="Settings">
       <div className="settings-header">
         <h2>Settings</h2>
         <button className="icon-button" onClick={onClose} title="Close (Esc)" aria-label="Close settings">
@@ -52,11 +71,30 @@ function Settings({ config, setConfig, modelStatus, onRecordingShortcut, onClose
           </Field>
         </Section>
 
+        <Section title="Answers" note="How the answers are worded. The layout stays the same; it applies from the next question.">
+          <Field label="Tone">
+            <select value={config.tone} onChange={(e) => setConfig({ tone: e.target.value as Tone })}>
+              {TONE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <p className="hint">{TONE_OPTIONS.find(([value]) => value === config.tone)?.[2]}</p>
+          </Field>
+          {config.tone === 'custom' && (
+            <Field label="Your tone">
+              <textarea
+                rows={2}
+                value={config.customTone}
+                placeholder="e.g. Friendly and upbeat, British spelling, like a senior engineer mentoring a junior"
+                onChange={(e) => setConfig({ customTone: e.target.value })}
+              />
+            </Field>
+          )}
+        </Section>
+
         <Section title="Voice">
           <Field label="Transcription">
             <div className="segmented">
-              <button className={config.speechEngine === 'local' ? 'on' : ''} onClick={() => setConfig({ speechEngine: 'local' })}>On this PC</button>
-              <button className={config.speechEngine === 'cloud' ? 'on' : ''} onClick={() => setConfig({ speechEngine: 'cloud' })}>AI service</button>
+              <button className={config.speechEngine === 'local' ? 'on' : ''} aria-pressed={config.speechEngine === 'local'} onClick={() => setConfig({ speechEngine: 'local' })}>On this PC</button>
+              <button className={config.speechEngine === 'cloud' ? 'on' : ''} aria-pressed={config.speechEngine === 'cloud'} onClick={() => setConfig({ speechEngine: 'cloud' })}>AI service</button>
             </div>
             <p className="hint">
               {config.speechEngine === 'local' ? modelNote : 'Usually the most accurate, with strong accents too. Your recording goes to the AI service.'}
@@ -77,6 +115,7 @@ function Settings({ config, setConfig, modelStatus, onRecordingShortcut, onClose
             <textarea rows={3} value={config.vocabulary} spellCheck={false} onChange={(e) => setConfig({ vocabulary: e.target.value })} />
             <p className="hint">Names and jargon, comma-separated. Spelled this way when heard, and offered as you type.</p>
           </Field>
+          <Toggle label="Hold to talk" note="Listen only while the voice shortcut or the mic button is held down; let go to send. Off: a tap also starts listening, until the next tap." checked={config.holdToTalk} onChange={(holdToTalk) => setConfig({ holdToTalk })} />
           <Toggle label="Send right away" note="Ask as soon as you stop talking or pick a region, instead of waiting for Enter." checked={config.autoSend} onChange={(autoSend) => setConfig({ autoSend })} />
         </Section>
 
@@ -102,9 +141,17 @@ function Settings({ config, setConfig, modelStatus, onRecordingShortcut, onClose
             <Swatches colors={TEXT_COLORS} value={config.textColor} onPick={(textColor) => setConfig({ textColor })} />
           </Field>
           <Toggle label="Hide from screen capture" note="Left out of screen shares, recordings and screenshots." checked={config.hideFromCapture} onChange={(hideFromCapture) => setConfig({ hideFromCapture })} />
+          <Field label="Auto-scroll answers">
+            <div className="segmented">
+              {AUTO_SCROLL_OPTIONS.map(([value, label]) => (
+                <button key={value} className={config.autoScroll === value ? 'on' : ''} aria-pressed={config.autoScroll === value} onClick={() => setConfig({ autoScroll: value })}>{label}</button>
+              ))}
+            </div>
+            <p className="hint">A new answer jumps to the top of the panel; a long one waits a moment, then scrolls down slowly as you read. Scrolling yourself stops it until the next answer.</p>
+          </Field>
         </Section>
 
-        <Section title="Shortcuts" note="Click one, then press the new keys. The Ctrl+Alt+Shift ones work anywhere, even locked.">
+        <Section title="Shortcuts" note="Pick one (click it, or Enter), then press the new keys; Esc keeps the old ones. The Ctrl+Alt+Shift ones work anywhere, even locked.">
           <ShortcutList config={config} setConfig={setConfig} onRecording={onRecordingShortcut} />
         </Section>
       </div>
@@ -151,6 +198,7 @@ function Swatches({ colors, value, onPick }: { colors: string[]; value: string; 
         <button
           key={c}
           className={`swatch${c.toLowerCase() === value.toLowerCase() ? ' on' : ''}`}
+          aria-pressed={c.toLowerCase() === value.toLowerCase()}
           style={{ background: c }}
           onClick={(e) => {
             e.preventDefault();
@@ -224,6 +272,14 @@ function ShortcutList({ config, setConfig, onRecording }: { config: Config; setC
         ))}
         <li>
           <span className="shortcut-action">Unlock (while locked)</span>
+          <span className="kbd fixed">Esc</span>
+        </li>
+        <li>
+          <span className="shortcut-action">Done moving (meanwhile: arrows move, held to keep going; Shift+arrow to that edge; Ctrl+arrow resizes)</span>
+          <span className="kbd fixed">Enter</span>
+        </li>
+        <li>
+          <span className="shortcut-action">Cancel a screenshot (meanwhile: arrows and Enter pick the corners; Ctrl+A takes the whole screen)</span>
           <span className="kbd fixed">Esc</span>
         </li>
       </ul>

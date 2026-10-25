@@ -15,7 +15,6 @@
     "bench:speech": "node scripts/bench-speech.mjs"
   },
   "dependencies": {
-    "@huggingface/transformers": "^4.3.1",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "@tauri-apps/plugin-global-shortcut": "^2.3.1",

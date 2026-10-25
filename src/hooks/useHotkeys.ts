@@ -40,6 +40,9 @@ export function useHotkeys(handlers: HotkeyHandlers, hotkeys: Hotkeys, suspended
 
     enqueue(async () => {
       if (!live) return;
+      // Registrations outlive the page: after a reload (or a dev hot update)
+      // the old page's would hold the keys, with no one listening
+      await unregisterAll().catch(() => {});
       for (const def of HOTKEY_DEFS) {
         if (def.scope !== 'global') continue;
         try {

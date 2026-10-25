@@ -17,9 +17,10 @@ tauri-build = { version = "2.7.3", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-# protocol-asset: the speech worker loads the bundled model from the app's
-# resources (scoped to resources/models in tauri.conf.json)
-tauri = { version = "2.12.4", features = ["protocol-asset"] }
+tauri = { version = "2.12.4", features = [] }
+# whisper.cpp, for speech to text on the GPU through Vulkan (src/speech.rs).
+# Building it needs the Vulkan SDK, CMake and libclang: see .cargo/config.toml
+whisper-rs-sys = { version = "=0.15.0", features = ["vulkan"] }
 tauri-plugin-log = "2"
 tauri-plugin-store = "2"
 tauri-plugin-global-shortcut = "2"

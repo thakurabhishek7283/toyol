@@ -1,32 +1,37 @@
-// Speech recognition benchmark: which Whisper model, and how much the audio
-// clean-up (src/lib/speech/audio.ts) and the vocabulary prompt help.
+// Speech recognition benchmark: how accurate the app's voice input is, and how
+// long it makes you wait after you stop talking.
 //
 // Spoken questions are made with Windows' built-in voices, then degraded the
 // ways a laptop mic degrades them: dead air around the speech, fan noise, other
 // people talking, a quiet mic. Clips with no speech at all check that nothing
-// is "heard" in silence or noise. Runs the same code as the app (the speech
-// worker), on the CPU.
+// is "heard" in silence or noise. Runs the same code as the app: each clip is
+// fed in real time to LiveTranscript (src/lib/speech/live.ts), on the app's
+// engine (src-tauri/src/speech.rs, through its `speech` example), with the
+// same vocabulary prompt.
 //
-//   npm run bench:speech -- [models...]   (default: base.en small.en)
+//   npm run bench:speech -- [models...]
+//
+// Models are whisper.cpp files: the bundled one by default, or names from
+// https://huggingface.co/ggerganov/whisper.cpp (e.g. ggml-small.en-q8_0.bin),
+// downloaded to bench/models. BENCH_BATCH=1 skips the live passes: the whole
+// clip is transcribed once it ends, as with no streaming.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { Readable } from 'node:stream';
 import { pipeline as streamPipeline } from 'node:stream/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { AutoProcessor, AutoTokenizer, env, WhisperForConditionalGeneration } from '@huggingface/transformers';
-import { findSpeech, normalize, prepareSpeech, SAMPLE_RATE, splitAtPauses } from '../src/lib/speech/audio.ts';
-import { buildPrompt, cleanTranscript } from '../src/lib/speech/transcript.ts';
-import { whisperTranscribe } from '../src/lib/speech/whisper.ts';
+import { SAMPLE_RATE } from '../src/lib/speech/audio.ts';
+import { LiveTranscript } from '../src/lib/speech/live.ts';
+import { buildPrompt } from '../src/lib/speech/transcript.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'bench');
 const MODEL_DIR = join(OUT, 'models');
-// Models are fetched up front (below), with retries: the library's own download
-// gives up when a long download drops
-env.localModelPath = MODEL_DIR;
-env.allowRemoteModels = false;
+const BUNDLED = join(ROOT, 'src-tauri', 'resources', 'models', 'ggml-medium.en-q8_0.bin');
 
 // What the voice says, and what a perfect transcript reads
 const CLIPS = [
@@ -50,7 +55,8 @@ const VOCABULARY = [
   'Kafka', 'RabbitMQ', 'Node.js', 'TypeScript', 'GraphQL', 'Terraform', 'Docker', 'AWS Lambda', 'Elasticsearch', 'Next.js',
 ];
 
-const MODELS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : ['base.en', 'small.en'];
+const MODELS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : [BUNDLED];
+const BATCH = Boolean(process.env.BENCH_BATCH);
 
 // --- audio ----------------------------------------------------------------
 
@@ -147,12 +153,7 @@ function wordErrors(ref, hyp) {
 
 const termHits = (terms, hyp) => terms.filter((t) => hyp.toLowerCase().includes(t.toLowerCase())).length;
 
-// --- models ---------------------------------------------------------------
-
-const MODEL_FILES = [
-  'config.json', 'generation_config.json', 'preprocessor_config.json', 'tokenizer.json', 'tokenizer_config.json',
-  'onnx/encoder_model_quantized.onnx', 'onnx/decoder_model_merged_quantized.onnx',
-];
+// --- the engine -----------------------------------------------------------
 
 // Download to `<path>.partial`, resuming where a dropped attempt stopped
 async function download(url, path) {
@@ -167,76 +168,89 @@ async function download(url, path) {
       await streamPipeline(Readable.fromWeb(response.body), createWriteStream(partial, { flags: append ? 'a' : 'w' }));
       break;
     } catch (error) {
-      if (attempt === 12) throw new Error(`Failed to download ${url}: ${error.message}`);
+      if (attempt === 40) throw new Error(`Failed to download ${url}: ${error.message}`);
       console.warn(`  retrying ${url.split('/').pop()} (${error.message})`);
     }
   }
   renameSync(partial, path);
 }
 
-async function fetchModel(id) {
-  for (const file of MODEL_FILES) {
-    const path = join(MODEL_DIR, id, file);
-    if (existsSync(path)) continue;
-    mkdirSync(dirname(path), { recursive: true });
-    console.log(`  downloading ${id}/${file}`);
-    await download(`https://huggingface.co/${id}/resolve/main/${file}`, path);
+async function modelPath(name) {
+  if (existsSync(name)) return name;
+  const path = join(MODEL_DIR, name);
+  if (!existsSync(path)) {
+    mkdirSync(MODEL_DIR, { recursive: true });
+    console.log(`  downloading ${name}`);
+    await download(`https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${name}`, path);
+  }
+  return path;
+}
+
+/** The app's speech engine in a child process (src-tauri/examples/speech.rs), as SpeechPasses */
+class NativeSpeech {
+  constructor(model) {
+    this.child = spawn('cargo', ['run', '--release', '--quiet', '--example', 'speech', '--', model], {
+      cwd: join(ROOT, 'src-tauri'),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    this.pending = new Map();
+    this.nextId = 1;
+    this.passMs = [];
+    createInterface({ input: this.child.stdout }).on('line', (line) => {
+      const reply = JSON.parse(line);
+      const request = this.pending.get(reply.id);
+      this.pending.delete(reply.id);
+      if (reply.error) request.reject(new Error(reply.error));
+      else {
+        if (reply.text !== null) this.passMs.push(reply.ms);
+        request.resolve(reply.text);
+      }
+    });
+    this.ready = new Promise((resolve, reject) => {
+      createInterface({ input: this.child.stderr }).on('line', (line) => {
+        if (line.startsWith('speech model ready')) resolve(line);
+        else if (!line.includes('register_') && !line.startsWith('ggml_vulkan:')) process.stderr.write(`  ${line}\n`);
+      });
+      this.child.on('exit', (code) => reject(new Error(`The speech engine exited (${code})`)));
+    });
+  }
+
+  pass(audio, prompt, maxTokens, final) {
+    const id = this.nextId++;
+    const count = Buffer.alloc(4);
+    count.writeUInt32LE(audio.length);
+    this.child.stdin.write(`${JSON.stringify({ id, type: 'pass', prompt, max_tokens: maxTokens, final })}\n`);
+    this.child.stdin.write(count);
+    this.child.stdin.write(Buffer.from(audio.buffer, audio.byteOffset, audio.byteLength));
+    return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+  }
+
+  async cancel() {
+    this.child.stdin.write(`${JSON.stringify({ type: 'cancel' })}\n`);
+  }
+
+  close() {
+    this.child.stdin.end();
   }
 }
 
-async function loadWhisper(name) {
-  const id = `onnx-community/whisper-${name}`;
-  await fetchModel(id);
-  const [processor, tokenizer, model] = await Promise.all([
-    AutoProcessor.from_pretrained(id),
-    AutoTokenizer.from_pretrained(id),
-    WhisperForConditionalGeneration.from_pretrained(id, { dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' } }),
-  ]);
-  return { processor, tokenizer, model, multilingual: !name.endsWith('.en') };
-}
-
-// ScreenPrompt's approach, for comparison: the raw recording, one 30 s window,
-// no prompt, 64 tokens at most
-async function baseline(parts, audio) {
-  const { processor, tokenizer, model } = parts;
-  const token = (n) => Number(tokenizer.convert_tokens_to_ids(n));
-  const start = [token('<|startoftranscript|>'), ...(parts.multilingual ? [token('<|en|>'), token('<|transcribe|>')] : []), token('<|notimestamps|>')];
-  const inputs = await processor(audio);
-  const out = await model.generate({ ...inputs, decoder_input_ids: start, max_new_tokens: 64 });
-  const ids = out.tolist()[0].map(Number);
-  return cleanTranscript(tokenizer.decode(ids.slice(start.length), { skip_special_tokens: true }));
-}
-
-// BENCH_ABLATION=1: each clean-up step on its own (no prompt), to see which help
-function partial({ trim, level }) {
-  return async (parts, audio) => {
-    let a = audio;
-    if (trim) {
-      const s = findSpeech(a);
-      if (!s) return '';
-      a = a.subarray(s.start, s.end);
+// The clip as the app hears it: the recording growing a frame at a time, in
+// real time, then stopped. Resolves to the text and the wait after stopping.
+async function listen(engine, audio, prompt) {
+  const live = new LiveTranscript(engine, prompt, () => {});
+  if (!BATCH) {
+    const frame = 2048; // the recorder's
+    const began = performance.now();
+    for (let n = frame; n < audio.length + frame; n += frame) {
+      const end = Math.min(n, audio.length);
+      await sleep(Math.max(0, began + (end / SAMPLE_RATE) * 1000 - performance.now()));
+      live.update(audio.subarray(0, end));
     }
-    if (level) a = normalize(a);
-    return whisperTranscribe(parts, { chunks: splitAtPauses(a), seconds: a.length / SAMPLE_RATE }, '');
-  };
+  }
+  const stoppedAt = performance.now();
+  const text = await live.finish(audio);
+  return { text, waitMs: performance.now() - stoppedAt };
 }
-const ABLATION = {
-  'chunks only': partial({}),
-  '+trim': partial({ trim: true }),
-  '+trim+level': partial({ trim: true, level: true }),
-};
-
-const PIPELINES = process.env.BENCH_ABLATION ? ABLATION : {
-  baseline: (parts, audio) => baseline(parts, audio),
-  cleaned: async (parts, audio) => {
-    const speech = prepareSpeech(audio);
-    return speech ? whisperTranscribe(parts, speech, '') : '';
-  },
-  'cleaned+vocab': async (parts, audio) => {
-    const speech = prepareSpeech(audio);
-    return speech ? whisperTranscribe(parts, speech, buildPrompt(VOCABULARY)) : '';
-  },
-};
 
 // --- run ------------------------------------------------------------------
 
@@ -280,33 +294,37 @@ tests.push({ condition: 'no-speech', clip: empty, audio: whiteNoise(4 * SAMPLE_R
 tests.push({ condition: 'no-speech', clip: empty, audio: scale(pinkNoise(4 * SAMPLE_RATE, 8), 0.02) });
 tests.push({ condition: 'no-speech', clip: empty, audio: scale(babble(4 * SAMPLE_RATE, voices, 9), 0.05) });
 
+const prompt = buildPrompt(VOCABULARY);
+const median = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] ?? 0;
 const results = [];
 for (const name of MODELS) {
-  process.stdout.write(`Loading whisper-${name}... `);
-  const parts = await loadWhisper(name);
-  console.log('ready');
-  for (const [pipeline, run] of Object.entries(PIPELINES)) {
-    const score = {};
-    let ms = 0;
-    for (const t of tests) {
-      const began = performance.now();
-      const hyp = await run(parts, t.audio);
-      ms += performance.now() - began;
-      const s = (score[t.condition] ??= { errors: 0, total: 0, terms: 0, termTotal: 0, heard: 0, samples: [] });
-      if (t.condition === 'no-speech') {
-        if (hyp) { s.heard++; s.samples.push(hyp); }
-        s.total++;
-        continue;
-      }
-      const e = wordErrors(t.clip.ref, hyp);
-      s.errors += e.errors; s.total += e.total;
-      s.terms += termHits(t.clip.terms, hyp); s.termTotal += t.clip.terms.length;
-      if (e.errors > 0 && s.samples.length < 3) s.samples.push(hyp);
+  const model = await modelPath(name);
+  process.stdout.write(`Loading ${name}... `);
+  const engine = new NativeSpeech(model);
+  console.log(await engine.ready);
+  const score = {};
+  const waits = [];
+  for (const t of tests) {
+    const { text, waitMs } = await listen(engine, t.audio, prompt);
+    waits.push(waitMs);
+    const s = (score[t.condition] ??= { errors: 0, total: 0, terms: 0, termTotal: 0, heard: 0, waits: [], samples: [] });
+    s.waits.push(waitMs);
+    if (t.condition === 'no-speech') {
+      if (text) { s.heard++; s.samples.push(text); }
+      s.total++;
+      continue;
     }
-    results.push({ model: name, pipeline, score, seconds: ms / 1000 / tests.length });
-    const row = Object.entries(score).map(([c, s]) =>
-      c === 'no-speech' ? `${c}: ${s.heard}/${s.total} hallucinated` : `${c}: WER ${((100 * s.errors) / s.total).toFixed(1)}% terms ${s.terms}/${s.termTotal}`);
-    console.log(`  ${pipeline.padEnd(14)} ${(ms / 1000 / tests.length).toFixed(2)}s/clip | ${row.join(' | ')}`);
+    const e = wordErrors(t.clip.ref, text);
+    s.errors += e.errors; s.total += e.total;
+    s.terms += termHits(t.clip.terms, text); s.termTotal += t.clip.terms.length;
+    if (e.errors > 0 && s.samples.length < 3) s.samples.push(text);
+  }
+  engine.close();
+  results.push({ model: name, batch: BATCH, score, passMs: median(engine.passMs), passes: engine.passMs.length });
+  console.log(`  ${engine.passMs.length} passes, median ${median(engine.passMs)} ms; wait after stopping: median ${Math.round(median(waits))} ms, worst ${Math.round(Math.max(...waits))} ms`);
+  for (const [c, s] of Object.entries(score)) {
+    const result = c === 'no-speech' ? `${s.heard}/${s.total} hallucinated` : `WER ${((100 * s.errors) / s.total).toFixed(1)}% terms ${s.terms}/${s.termTotal}`;
+    console.log(`  ${c.padEnd(10)} ${result.padEnd(26)} wait ${Math.round(median(s.waits))} ms`);
   }
 }
 writeFileSync(join(OUT, 'results.json'), JSON.stringify(results, null, 2));

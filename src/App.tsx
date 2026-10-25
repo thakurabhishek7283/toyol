@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { availableMonitors, currentMonitor, getCurrentWindow, LogicalSize, PhysicalPosition, primaryMonitor } from '@tauri-apps/api/window';
+import { currentMonitor, getCurrentWindow, LogicalSize, PhysicalPosition, primaryMonitor } from '@tauri-apps/api/window';
 import { DEFAULT_CONFIG, MAX_FONT_SIZE, MIN_FONT_SIZE, OPACITY_STEPS } from './config';
 import { useConfig } from './hooks/useConfig';
 import { useChat } from './hooks/useChat';
 import { useHotkeys } from './hooks/useHotkeys';
 import { useMemory } from './hooks/useMemory';
+import { isOnAnyMonitor, useMovePanel } from './hooks/useMovePanel';
 import { useSnip } from './hooks/useSnip';
 import { useVoice } from './hooks/useVoice';
 import { parseAnswer } from './lib/answer';
@@ -27,17 +28,16 @@ const GEOMETRY_SAVE_DELAY_MS = 400;
 const FIRST_RUN_MARGIN = 24; // logical px from the screen's top-right corner
 // Windows parks minimized windows here; never save it as a position
 const MINIMIZED_COORD = -32000;
-
-async function isOnAnyMonitor(x: number, y: number): Promise<boolean> {
-  const monitors = await availableMonitors();
-  return monitors.some((m) => x >= m.position.x && x < m.position.x + m.size.width && y >= m.position.y && y < m.position.y + m.size.height);
-}
+const PAGE_SCROLL = 0.85; // of the answers' height, per PageUp / PageDown
 
 function App() {
   const { config, setConfig, loading } = useConfig();
   const { memory, rememberQuestion, rememberTerms } = useMemory();
   const hotkeys = useMemo(() => resolveHotkeys(config.hotkeys), [config.hotkeys]);
-  const ai = useMemo(() => ({ endpoint: config.aiEndpoint, model: config.aiModel, apiKey: config.aiApiKey }), [config.aiEndpoint, config.aiModel, config.aiApiKey]);
+  const ai = useMemo(
+    () => ({ endpoint: config.aiEndpoint, model: config.aiModel, apiKey: config.aiApiKey, tone: config.tone, customTone: config.customTone }),
+    [config.aiEndpoint, config.aiModel, config.aiApiKey, config.tone, config.customTone],
+  );
   const { turns, busy, ask, stop, reset } = useChat(ai);
   const modelStatus = useSyncExternalStore(subscribeModelStatus, getModelStatus);
 
@@ -52,6 +52,7 @@ function App() {
   const quickAskRef = useRef(false); // unlocked just to type: lock again on blur
   const voiceTextRef = useRef(''); // what voice input put in the box, to tell typed from spoken
   const restoredRef = useRef(false);
+  const conversationRef = useRef<HTMLDivElement>(null);
 
   const showNote = useCallback((message: string) => setNote(message), []);
   useEffect(() => {
@@ -91,12 +92,22 @@ function App() {
     setConfig({ locked: false });
   }, [applyLock, setConfig]);
 
+  // Moving shows the panel first; reveal comes further down
+  const revealRef = useRef<() => Promise<void>>(async () => {});
+  const move = useMovePanel(useCallback(() => {
+    revealRef.current().catch(() => {});
+  }, []));
+  const { escapeIsOurs } = move;
+
   useEffect(() => {
-    const unlisten = listen('emergency-unlock', () => emergencyUnlock());
+    const unlisten = listen('emergency-unlock', () => {
+      // The keyboard hook sees every Esc, the one that ends moving too
+      if (!escapeIsOurs()) emergencyUnlock();
+    });
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [emergencyUnlock]);
+  }, [emergencyUnlock, escapeIsOurs]);
 
   // Windows doesn't run our keyboard hook for keys typed into the panel itself,
   // so Esc while the locked panel has focus arrives here instead
@@ -127,6 +138,9 @@ function App() {
     await appWindow.show();
     setVisible(true);
   }, [visible]);
+  useEffect(() => {
+    revealRef.current = reveal;
+  }, [reveal]);
 
   const toggleVisibility = useCallback(async () => {
     if (visible) {
@@ -136,8 +150,9 @@ function App() {
       await appWindow.show();
       await appWindow.setFocus();
       setVisible(true);
+      if (!locked) setFocusRequest((n) => n + 1);
     }
-  }, [visible]);
+  }, [visible, locked]);
 
   const quit = useCallback(async () => {
     await invoke('uninstall_mouse_hook').catch(() => {});
@@ -266,6 +281,7 @@ function App() {
       cloudModel: config.cloudSpeechModel,
     }),
     micId: config.micId,
+    holdToTalk: config.holdToTalk,
     preload: !loading && config.speechEngine === 'local',
     onText: (text) => {
       reveal().catch(() => {});
@@ -296,6 +312,18 @@ function App() {
 
   // --- shortcuts ------------------------------------------------------------
 
+  const newChat = useCallback(() => {
+    reset();
+    setDraft('');
+    setImage(null);
+    if (!locked) setFocusRequest((n) => n + 1);
+  }, [reset, locked]);
+
+  const scrollAnswers = useCallback((direction: 1 | -1) => {
+    const answers = conversationRef.current;
+    answers?.scrollBy({ top: direction * answers.clientHeight * PAGE_SCROLL, behavior: 'smooth' });
+  }, []);
+
   const setFontSize = useCallback((size: number) => {
     setConfig({ fontSize: Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, size)) });
   }, [setConfig]);
@@ -307,11 +335,10 @@ function App() {
     snip,
     toggleLock,
     toggleVisibility,
-    newChat: () => {
-      reset();
-      setDraft('');
-      setImage(null);
-    },
+    newChat,
+    move: move.toggle,
+    scrollUp: () => scrollAnswers(-1),
+    scrollDown: () => scrollAnswers(1),
     cycleOpacity: () => {
       const at = OPACITY_STEPS.findIndex((o) => o <= config.opacity + 0.001);
       setConfig({ opacity: OPACITY_STEPS[(at + 1) % OPACITY_STEPS.length] });
@@ -322,6 +349,13 @@ function App() {
     fontDown: () => setFontSize(config.fontSize - 1),
     fontReset: () => setFontSize(DEFAULT_CONFIG.fontSize),
   }, hotkeys, recordingShortcut);
+
+  // Settings closed: back to the question box
+  const settingsWasOpen = useRef(false);
+  useEffect(() => {
+    if (settingsWasOpen.current && !showSettings && !locked) setFocusRequest((n) => n + 1);
+    settingsWasOpen.current = showSettings;
+  }, [showSettings, locked]);
 
   // Esc closes Settings
   useEffect(() => {
@@ -351,27 +385,25 @@ function App() {
     '--opacity': config.opacity,
   } as CSSProperties;
 
-  const status = (
+  const status = move.moving ? <MoveStatus /> : (
     <VoiceStatus
       phase={voice.phase}
       level={voice.level}
       since={voice.since}
-      modelLoading={config.speechEngine === 'local' && voice.phase === 'transcribing' && modelStatus.state === 'loading' ? modelStatus.progress : null}
+      liveText={voice.liveText}
+      modelLoading={config.speechEngine === 'local' && voice.phase !== 'idle' && modelStatus.state === 'loading'}
       note={note}
+      holdToTalk={config.holdToTalk}
     />
   );
 
   return (
-    <div className={`app${locked ? ' locked' : ''}`} style={style}>
+    <div className={`app${locked ? ' locked' : ''}${move.moving ? ' moving' : ''}`} style={style}>
       <TitleBar
         locked={locked}
         status={locked ? <span className="chip warn">Locked</span> : null}
         canReset={turns.length > 0 || draft !== '' || image !== null}
-        onNewChat={() => {
-          reset();
-          setDraft('');
-          setImage(null);
-        }}
+        onNewChat={newChat}
         onToggleLock={toggleLock}
         onSettings={() => setShowSettings((s) => !s)}
         onHide={toggleVisibility}
@@ -389,8 +421,14 @@ function App() {
         <>
           <Conversation
             turns={turns}
-            onAsk={(q) => send(q, 'typed', null)}
-            empty={<Welcome configured={configured} hotkeys={hotkeys} onSettings={() => setShowSettings(true)} />}
+            scrollRef={conversationRef}
+            autoScroll={config.autoScroll}
+            onAsk={(q) => {
+              send(q, 'typed', null);
+              // Its button goes away as that answer folds
+              setFocusRequest((n) => n + 1);
+            }}
+            empty={<Welcome configured={configured} hotkeys={hotkeys} holdToTalk={config.holdToTalk} onSettings={() => setShowSettings(true)} />}
           />
           {locked ? (
             <div className="composer">
@@ -410,14 +448,18 @@ function App() {
               onRemoveImage={() => setImage(null)}
               busy={busy}
               listening={voice.phase === 'listening' || voice.phase === 'starting'}
+              holdToTalk={config.holdToTalk}
               status={status}
               focusRequest={focusRequest}
               completion={completion}
               history={memory.questions}
               onSend={sendDraft}
               onStop={stop}
+              onMicDown={voice.keyDown}
+              onMicUp={voice.keyUp}
               onMic={voice.toggle}
               onSnip={snip}
+              onPage={scrollAnswers}
             />
           )}
         </>
@@ -430,12 +472,17 @@ interface VoiceStatusProps {
   phase: ReturnType<typeof useVoice>['phase'];
   level: number;
   since: number;
-  modelLoading: number | null; // progress, while the speech model loads for this request
+  liveText: string; // what's been heard so far
+  modelLoading: boolean; // the speech model is still loading for this request
   note: string | null;
+  holdToTalk: boolean;
 }
 
-/** Above the question box: listening (with a level meter and time), transcribing, or a short note */
-function VoiceStatus({ phase, level, since, modelLoading, note }: VoiceStatusProps) {
+/**
+ * Above the question box: listening (with a level meter, time, and what's been
+ * heard so far), transcribing, or a short note
+ */
+function VoiceStatus({ phase, level, since, liveText, modelLoading, note, holdToTalk }: VoiceStatusProps) {
   const [, tick] = useState(0);
   useEffect(() => {
     if (phase !== 'listening') return;
@@ -443,31 +490,52 @@ function VoiceStatus({ phase, level, since, modelLoading, note }: VoiceStatusPro
     return () => window.clearInterval(timer);
   }, [phase]);
 
+  // Newest words at the bottom; the start scrolls out of sight
+  const heard = liveText && phase !== 'idle' ? <div className="live-text"><span>{liveText}</span></div> : null;
+
   if (phase === 'listening' || phase === 'starting') {
     const seconds = phase === 'listening' ? Math.floor((Date.now() - since) / 1000) : 0;
     return (
-      <div className="status listening" role="status">
-        <span className="rec-dot" aria-hidden="true" />
-        <span>Listening</span>
-        <span className="meter" aria-hidden="true"><span style={{ transform: `scaleX(${Math.max(0.04, level)})` }} /></span>
-        <span className="time">{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}</span>
-        <span className="status-hint">press again or let go to send</span>
-      </div>
+      <>
+        {heard}
+        <div className="status listening" role="status">
+          <span className="rec-dot" aria-hidden="true" />
+          <span>{modelLoading ? 'Listening · loading the speech model…' : 'Listening'}</span>
+          <span className="meter" aria-hidden="true"><span style={{ transform: `scaleX(${Math.max(0.04, level)})` }} /></span>
+          <span className="time">{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}</span>
+          <span className="status-hint">{holdToTalk ? 'let go to send' : 'press again or let go to send'}</span>
+        </div>
+      </>
     );
   }
   if (phase === 'transcribing') {
     return (
-      <div className="status" role="status">
-        <span className="spinner" aria-hidden="true" />
-        {modelLoading !== null ? `Loading the speech model… ${Math.round(modelLoading)}%` : 'Transcribing…'}
-      </div>
+      <>
+        {heard}
+        <div className="status" role="status">
+          <span className="spinner" aria-hidden="true" />
+          {modelLoading ? 'Loading the speech model…' : 'Transcribing…'}
+        </div>
+      </>
     );
   }
   if (note) return <div className="status note" role="status">{note}</div>;
   return null;
 }
 
-function Welcome({ configured, hotkeys, onSettings }: { configured: boolean; hotkeys: Hotkeys; onSettings: () => void }) {
+/** While moving the panel (useMovePanel): which keys do what */
+function MoveStatus() {
+  return (
+    <div className="status moving" role="status">
+      <span><kbd>Arrows</kbd> move</span>
+      <span><kbd>Shift</kbd> to edge</span>
+      <span><kbd>Ctrl</kbd> resize</span>
+      <span><kbd>Enter</kbd> done</span>
+    </div>
+  );
+}
+
+function Welcome({ configured, hotkeys, holdToTalk, onSettings }: { configured: boolean; hotkeys: Hotkeys; holdToTalk: boolean; onSettings: () => void }) {
   return (
     <div className="welcome">
       {!configured && (
@@ -481,10 +549,12 @@ function Welcome({ configured, hotkeys, onSettings }: { configured: boolean; hot
       <p>Type, speak, or pick part of the screen. The answer leads with one line you can read at a glance; the detail and likely follow-ups sit below it.</p>
       <ul className="welcome-keys">
         <li><kbd>{displayAccelerator(hotkeys.ask)}</kbd> Type a question</li>
-        <li><kbd>{displayAccelerator(hotkeys.voice)}</kbd> Speak: tap, or hold while talking</li>
-        <li><kbd>{displayAccelerator(hotkeys.snip)}</kbd> Screenshot: click two corners</li>
+        <li><kbd>{displayAccelerator(hotkeys.voice)}</kbd> Speak: {holdToTalk ? 'hold while talking' : 'tap, or hold while talking'}</li>
+        <li><kbd>{displayAccelerator(hotkeys.snip)}</kbd> Screenshot: click two corners, or arrows and Enter</li>
+        <li><kbd>{displayAccelerator(hotkeys.move)}</kbd> Move or resize with the arrow keys</li>
         <li><kbd>{displayAccelerator(hotkeys.toggleLock)}</kbd> Lock: clicks go through</li>
         <li><kbd>{displayAccelerator(hotkeys.toggleVisibility)}</kbd> Show / hide</li>
+        <li><kbd>{displayAccelerator(hotkeys.scrollUp)}</kbd> <kbd>{displayAccelerator(hotkeys.scrollDown)}</kbd> Scroll the answers</li>
         <li><kbd>Tab</kbd> Accept a completion</li>
       </ul>
     </div>

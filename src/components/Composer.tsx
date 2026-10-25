@@ -9,15 +9,22 @@ interface ComposerProps {
   onRemoveImage: () => void;
   busy: boolean; // an answer is being written
   listening: boolean;
+  holdToTalk: boolean; // the mic button listens only while held
   status: ReactNode; // voice progress or a short note, above the box
   focusRequest: number; // changes when the box should take focus
   completion: SuggestContext;
   history: string[]; // questions asked before, most recent first (↑ / ↓)
   onSend: () => void;
   onStop: () => void;
-  onMic: () => void;
+  // The mic button works as the voice shortcut does: pressed and let go, by mouse or with Space / Enter
+  onMicDown: () => void;
+  onMicUp: () => void;
+  onMic: () => void; // a click with neither (a screen reader's)
   onSnip: () => void;
+  onPage: (direction: 1 | -1) => void; // PageUp / PageDown: scroll the answers
 }
+
+const isPressKey = (e: React.KeyboardEvent) => e.key === ' ' || e.key === 'Enter';
 
 const MAX_LINES = 6;
 
@@ -117,6 +124,11 @@ function Composer(props: ComposerProps) {
         }
         return;
       }
+      case 'PageUp':
+      case 'PageDown':
+        e.preventDefault();
+        props.onPage(e.key === 'PageDown' ? 1 : -1);
+        return;
       case 'Escape':
         if (active) {
           e.preventDefault();
@@ -194,7 +206,35 @@ function Composer(props: ComposerProps) {
           />
         </div>
         <div className="input-buttons">
-          <button className={`icon-button${listening ? ' active-danger' : ''}`} onClick={props.onMic} title={listening ? 'Stop and send' : 'Speak your question'} aria-label="Voice input" aria-pressed={listening}>
+          <button
+            className={`icon-button${listening ? ' active-danger' : ''}`}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return;
+              e.currentTarget.setPointerCapture(e.pointerId); // the release comes here wherever it happens
+              props.onMicDown();
+            }}
+            onPointerUp={(e) => {
+              if (e.button === 0) props.onMicUp();
+            }}
+            onPointerCancel={props.onMicUp}
+            onKeyDown={(e) => {
+              if (!isPressKey(e)) return;
+              e.preventDefault(); // no click: the press and release do it
+              if (!e.repeat) props.onMicDown();
+            }}
+            onKeyUp={(e) => {
+              if (!isPressKey(e)) return;
+              e.preventDefault();
+              props.onMicUp();
+            }}
+            onBlur={props.onMicUp}
+            onClick={(e) => {
+              if (e.detail === 0) props.onMic();
+            }}
+            title={listening ? (props.holdToTalk ? 'Let go to send' : 'Stop and send') : props.holdToTalk ? 'Hold while talking' : 'Speak your question: click, or hold while talking'}
+            aria-label={props.holdToTalk ? 'Voice input: hold while talking' : 'Voice input'}
+            aria-pressed={listening}
+          >
             <Icon name="mic" />
           </button>
           <button className="icon-button" onClick={props.onSnip} title="Screenshot a region (two clicks)" aria-label="Screenshot a region">

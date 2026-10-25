@@ -10,7 +10,22 @@ export interface AiSettings {
   endpoint: string; // base URL, ending in /v1
   model: string; // model or deployment name
   apiKey: string;
+  tone?: Tone; // how the answers are worded; the default when left out
+  customTone?: string; // the user's own description, for tone 'custom'
 }
+
+/** How the answers are worded, without changing their format */
+export type Tone = 'default' | 'conversational' | 'professional' | 'simple' | 'technical' | 'custom';
+
+// Each tone's wording rule, added to the instructions ('custom' is the user's own)
+const TONES: Record<Exclude<Tone, 'default' | 'custom'>, string> = {
+  conversational: 'Conversational and natural, like a colleague talking it through: plain words, contractions, ' +
+    'short sentences that are easy to say out loud.',
+  professional: 'Polished and professional: precise, confident and formal; no slang, no filler.',
+  simple: 'Simple: everyday words, as if to a smart newcomer; explain any jargon you need in a few words, and ' +
+    'prefer an analogy to a definition.',
+  technical: 'Technical and dense: exact terminology, specifics and numbers, for an expert reader; skip the basics.',
+};
 
 /** How a question came in, which tells the model how to read it */
 export type InputSource = 'typed' | 'voice' | 'screen';
@@ -92,6 +107,16 @@ export function userMessage(input: string, source: InputSource, image?: string):
   return { role: 'user', content: text };
 }
 
+/** The instructions, with the tone's wording rule when there is one */
+export function instructionsFor(tone: Tone = 'default', customTone = ''): string {
+  const rule = tone === 'custom' ? customTone.trim() : tone === 'default' ? '' : TONES[tone];
+  if (!rule) return INSTRUCTIONS;
+  // The format is what lib/answer.ts parses, so the tone may change the wording only
+  return `${INSTRUCTIONS}\n\nTONE\n- Word every part of the reply this way: ${rule}\n` +
+    '- The tone changes only the wording: keep the format above exactly (the Q line, the bold answer, the ' +
+    'bullets, Details, Follow-ups) and stay just as correct.';
+}
+
 let cached: { key: string; client: OpenAI } | null = null;
 
 async function clientFor(settings: AiSettings): Promise<OpenAI> {
@@ -126,7 +151,7 @@ export async function streamAnswer(
   const stream = await client.responses.create(
     {
       model: settings.model.trim(),
-      instructions: INSTRUCTIONS,
+      instructions: instructionsFor(settings.tone, settings.customTone),
       input: messages,
       max_output_tokens: MAX_OUTPUT_TOKENS,
       stream: true,
@@ -151,14 +176,24 @@ export async function streamAnswer(
 /** Speech to text with the AI service's transcription model (e.g. gpt-4o-transcribe) */
 export async function transcribeCloud(settings: AiSettings, model: string, wav: ArrayBuffer, prompt: string): Promise<string> {
   const client = await clientFor(settings);
-  const result = await client.audio.transcriptions.create({
-    file: await toFile(new Uint8Array(wav), 'speech.wav', { type: 'audio/wav' }),
-    model: model.trim(),
-    language: 'en',
-    prompt: prompt || undefined,
-    temperature: 0,
-  });
-  return result.text;
+  const { NotFoundError } = await import('openai');
+  try {
+    const result = await client.audio.transcriptions.create({
+      file: await toFile(new Uint8Array(wav), 'speech.wav', { type: 'audio/wav' }),
+      model: model.trim(),
+      language: 'en',
+      prompt: prompt || undefined,
+      temperature: 0,
+    });
+    return result.text;
+  } catch (error) {
+    // The usual cause: the AI service has no transcription model by that name
+    // (on Azure, a deployment of e.g. gpt-4o-transcribe)
+    if (error instanceof NotFoundError) {
+      throw new Error(`The AI service has no speech model "${model.trim()}". Deploy one, or switch Voice to "On this PC" in Settings.`);
+    }
+    throw error;
+  }
 }
 
 /** What went wrong, in words for the panel */
