@@ -1,0 +1,20 @@
+node_modules
+dist
+*.local
+*.log
+
+# Rust / Tauri build output
+src-tauri/target/
+src-tauri/gen/schemas
+
+# Speech benchmark audio and results (scripts/bench-speech.mjs)
+bench/
+
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+
+# Downloaded by scripts/fetch-models.mjs (too big for git)
+src-tauri/resources/models/

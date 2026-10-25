@@ -1,0 +1,65 @@
+/* Base styles for both windows (the panel and the snip window) */
+
+:root {
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "Courier New", monospace;
+  --accent: #3b8bff;
+  --danger: #ff5a52;
+  --warn: #ffa53a;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --fast: 120ms;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+body {
+  overflow: hidden;
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  /* The window is transparent: the panel paints itself, with rounded corners */
+  background: transparent;
+}
+
+/* The plain arrow everywhere, whatever is being done: never the text I-beam,
+   the link hand, or a crosshair while snipping. !important so it wins over
+   inline and default styles. The window's resize edges keep the arrow too
+   (keep_arrow_cursor in windows_api.rs). */
+*,
+*::before,
+*::after {
+  cursor: default !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

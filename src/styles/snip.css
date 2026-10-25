@@ -1,0 +1,80 @@
+/* The snip window: the whole monitor, left as it is until the first click.
+   Not fully transparent: the window must still take the mouse, and a fully
+   clear pixel can let clicks fall through to the app below. */
+.snip {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.01);
+  user-select: none;
+  overflow: hidden;
+}
+
+/* Guide lines through the mouse, for lining up the first corner */
+.snip-guide {
+  position: absolute;
+  background: rgba(59, 139, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+.snip-guide-x {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+.snip-guide-y {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+/* The region: clear, with everything around it dimmed */
+.snip-region {
+  position: absolute;
+  border: 1.5px solid #3b8bff;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.38);
+  pointer-events: none;
+}
+
+.snip-size {
+  position: absolute;
+  left: -1.5px;
+  bottom: 100%;
+  margin-bottom: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #3b8bff;
+  color: #fff;
+  font: 600 11px/1.4 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* At the top of the screen, inside the box instead */
+.snip-size.inside {
+  bottom: auto;
+  top: 4px;
+  left: 4px;
+  margin: 0;
+}
+
+.snip-hint {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(22, 24, 29, 0.92);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  color: #eceef2;
+  font: 500 13px var(--font-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.snip-hint span {
+  color: rgba(236, 238, 242, 0.6);
+  font-size: 12px;
+}

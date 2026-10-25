@@ -1,0 +1,39 @@
+{
+  "name": "toyol",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "fetch-models": "node scripts/fetch-models.mjs",
+    "tauri:dev": "npm run fetch-models && tauri dev",
+    "tauri:build": "npm run fetch-models && tauri build",
+    "test": "vitest run",
+    "bench:speech": "node scripts/bench-speech.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.1",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
+    "@tauri-apps/plugin-global-shortcut": "^2.3.1",
+    "@tauri-apps/plugin-store": "^2.4.2",
+    "dompurify": "^3.4.17",
+    "marked": "^16.4.1",
+    "openai": "^7.43.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.3",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4",
+    "vitest": "^5.0.3"
+  }
+}

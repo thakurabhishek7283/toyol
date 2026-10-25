@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bubble" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5AB0FF"/>
+      <stop offset="1" stop-color="#2F6BFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="#15171C"/>
+  <path d="M232 300a96 96 0 0 1 96-96h368a96 96 0 0 1 96 96v284a96 96 0 0 1-96 96H486L330 806V680a96 96 0 0 1-98-96Z" fill="url(#bubble)"/>
+  <path d="M470 262v236a74 74 0 0 0 74 74h56M394 358h196" fill="none" stroke="#FFFFFF" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/></svg>

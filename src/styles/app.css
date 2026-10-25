@@ -1,0 +1,1003 @@
+/* The panel. Its colors come from Settings (--bg, --fg, --opacity, set on
+   .app); every other shade is mixed from those, so light panels work as well
+   as dark. Opacity is the background's: the window is transparent, so what's
+   behind shows through while the text stays solid. (Not the window's own
+   alpha: Tauri re-applies the window's styles and drops WS_EX_LAYERED.) */
+
+.app {
+  --fg-2: color-mix(in srgb, var(--fg) 68%, transparent);
+  --fg-3: color-mix(in srgb, var(--fg) 44%, transparent);
+  --line: color-mix(in srgb, var(--fg) 12%, transparent);
+  --tint: color-mix(in srgb, var(--fg) 5.5%, transparent);
+  --tint-2: color-mix(in srgb, var(--fg) 10%, transparent);
+  --raised: color-mix(in srgb, var(--fg) 7%, var(--bg));
+  --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+  --accent-text: color-mix(in srgb, var(--accent) 72%, var(--fg));
+  --warn-soft: color-mix(in srgb, var(--warn) 18%, transparent);
+
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg) calc(var(--opacity) * 100%), transparent);
+  color: var(--fg);
+  font-size: var(--fs);
+  user-select: none;
+}
+/* Text on a see-through panel: a soft shadow in the panel's color keeps it
+   readable over whatever is behind */
+.app .conversation,
+.app .welcome {
+  text-shadow: 0 0 6px color-mix(in srgb, var(--bg) calc((1 - var(--opacity)) * 100%), transparent);
+}
+
+kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--tint);
+  color: var(--fg-2);
+  font: 600 10.5px/1.4 var(--font-ui);
+  white-space: nowrap;
+}
+
+.chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.chip.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+/* --- title bar ------------------------------------------------------------ */
+
+.title-bar {
+  flex-shrink: 0;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.title-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.title-name {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.title-buttons {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.icon-button {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--fg-2);
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.icon-button:hover:not(:disabled) {
+  background: var(--tint-2);
+  color: var(--fg);
+}
+.icon-button:disabled {
+  opacity: 0.35;
+}
+.icon-button.danger:hover {
+  background: var(--danger);
+  color: #fff;
+}
+.icon-button.active-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.icon-button.active-danger {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+
+/* --- conversation --------------------------------------------------------- */
+
+.conversation {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Scrolling is Conversation's: the browser's scroll anchoring would follow
+     the streaming answer down, past the part to read at a glance */
+  overflow-anchor: none;
+  padding: 2px 14px 12px;
+  user-select: text;
+}
+
+.conversation::-webkit-scrollbar,
+.settings-body::-webkit-scrollbar {
+  width: 6px;
+}
+.conversation::-webkit-scrollbar-thumb,
+.settings-body::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--tint-2);
+}
+
+.turn {
+  padding: 14px 0 12px;
+  scroll-margin-top: 4px;
+  animation: turn-in 160ms var(--ease);
+}
+.turn + .turn {
+  border-top: 1px solid var(--line);
+}
+
+/* The question as understood */
+.turn-question {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.q-mark {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 0.12em;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+.turn-question h2 {
+  font-size: 0.95em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* What was typed or heard, when it differs from the question as understood */
+.turn-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 5px 0 0 26px;
+  color: var(--fg-3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.turn-input img {
+  max-width: 120px;
+  max-height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  object-fit: cover;
+}
+.turn-input svg {
+  vertical-align: -1px;
+}
+
+/* The at-a-glance answer: the bold line and the key points */
+.glance {
+  margin-top: 10px;
+  padding: 10px 12px 10px 13px;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px 10px 10px 4px;
+  background: var(--tint);
+  line-height: 1.5;
+}
+.glance > p:first-child {
+  font-size: 1.04em;
+  line-height: 1.42;
+}
+.glance > p:first-child strong {
+  font-weight: 650;
+}
+
+.more-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 2px 7px 2px 4px;
+  border-radius: 6px;
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 550;
+}
+.more-toggle:hover {
+  background: var(--tint);
+  color: var(--fg);
+}
+.chevron {
+  display: grid;
+  transition: transform var(--fast) var(--ease);
+}
+.chevron.open {
+  transform: rotate(90deg);
+}
+
+.details {
+  margin-top: 4px;
+  padding: 0 2px;
+  font-size: 0.94em;
+  line-height: 1.58;
+}
+
+/* Likely next questions: click one to ask it */
+.follow-ups {
+  list-style: none;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.follow-ups li {
+  padding: 5px 0;
+  color: var(--fg-2);
+  font-size: 0.88em;
+  line-height: 1.45;
+}
+.follow-ups button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--accent-text);
+  font-weight: 600;
+  text-align: left;
+}
+.follow-ups button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.follow-ups button svg {
+  flex-shrink: 0;
+  align-self: center;
+}
+.follow-ups span {
+  display: block;
+  margin: 1px 0 0 17px;
+}
+.follow-ups span p {
+  margin: 0;
+}
+
+.turn-note {
+  margin-top: 10px;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.turn-note.error {
+  color: var(--warn);
+}
+.turn-note.thinking {
+  background: linear-gradient(90deg, var(--fg-3) 30%, var(--fg) 50%, var(--fg-3) 70%) 0 0 / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.caret {
+  display: inline-block;
+  width: 0.45em;
+  height: 1em;
+  margin-top: 4px;
+  border-radius: 1px;
+  background: var(--fg);
+  opacity: 0.55;
+  animation: blink 1s steps(2, start) infinite;
+}
+
+.copy-answer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--fg-3);
+  font-size: 11.5px;
+}
+.copy-answer:hover {
+  background: var(--tint);
+  color: var(--fg);
+}
+
+/* --- Markdown in answers --------------------------------------------------- */
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown table,
+.markdown blockquote {
+  margin: 0.5em 0;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 1.25em;
+}
+.markdown li {
+  margin: 0.2em 0;
+}
+.markdown li::marker {
+  color: var(--fg-3);
+}
+.markdown strong {
+  font-weight: 650;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 0.9em 0 0.3em;
+  font-size: 1em;
+  font-weight: 650;
+}
+.markdown a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+}
+.markdown code {
+  padding: 0.05em 0.35em;
+  border-radius: 4px;
+  background: var(--tint-2);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.markdown blockquote {
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+  color: var(--fg-2);
+}
+.markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.markdown th,
+.markdown td {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.markdown th {
+  background: var(--tint);
+  font-weight: 600;
+}
+.markdown hr {
+  margin: 0.8em 0;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+.code-block {
+  margin: 0.6em 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 2px 10px;
+  background: var(--tint);
+  color: var(--fg-3);
+  font-size: 11px;
+}
+.code-copy {
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+.code-copy:hover {
+  background: var(--tint-2);
+  color: var(--fg);
+}
+.code-block pre {
+  margin: 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  background: color-mix(in srgb, var(--fg) 3%, var(--bg));
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  line-height: 1.5;
+}
+.code-block pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+/* --- question box ----------------------------------------------------------- */
+
+.composer {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 4px;
+  color: var(--fg-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.status.listening {
+  color: var(--fg);
+}
+.status.note {
+  white-space: normal;
+}
+.status-hint {
+  overflow: hidden;
+  color: var(--fg-3);
+  text-overflow: ellipsis;
+}
+.rec-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.meter {
+  flex-shrink: 0;
+  width: 56px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--tint-2);
+}
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--danger);
+  transform-origin: left;
+  transition: transform 110ms linear;
+}
+.time {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-2);
+}
+.spinner {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--tint-2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.suggestions {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: calc(100% - 4px);
+  z-index: 2;
+  list-style: none;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+.suggestions li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.suggestions li:hover {
+  background: var(--tint);
+}
+.suggestions li.selected {
+  background: var(--accent-soft);
+}
+.suggestions .kind {
+  flex-shrink: 0;
+  width: 42px;
+  color: var(--fg-3);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 6px;
+  border-radius: 8px;
+  background: var(--tint);
+  color: var(--fg-2);
+  font-size: 12px;
+}
+.attachment img {
+  height: 34px;
+  max-width: 80px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.attachment span {
+  flex: 1;
+}
+
+.input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 3px 4px 3px 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--tint);
+  transition: border-color var(--fast) var(--ease);
+}
+.input-row.focused {
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+/* The box and its mirror sit on top of each other and must lay text out the
+   same way, so the grey completion lands right after the caret */
+.input-wrap {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.input,
+.input-mirror {
+  grid-area: 1 / 1;
+  width: 100%;
+  padding: 6px 0;
+  border: 0;
+  font: 400 0.95em/1.45 var(--font-ui);
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.input-mirror {
+  overflow: hidden;
+  color: transparent;
+  pointer-events: none;
+}
+.ghost {
+  color: var(--fg-3);
+}
+.input {
+  resize: none;
+  overflow-y: auto;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  caret-color: var(--accent);
+  user-select: text;
+}
+.input::-webkit-scrollbar {
+  width: 0;
+}
+.input::placeholder {
+  color: var(--fg-3);
+}
+
+.input-buttons {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px 0;
+}
+.send-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: 3px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  transition: opacity var(--fast) var(--ease);
+}
+.send-button:disabled {
+  opacity: 0.3;
+}
+.send-button.stop {
+  background: var(--tint-2);
+  color: var(--fg);
+}
+
+.locked-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 4px;
+  color: var(--fg-3);
+  font-size: 11.5px;
+}
+
+/* --- first run ---------------------------------------------------------------- */
+
+.welcome {
+  padding: 18px 2px 8px;
+  user-select: none;
+}
+.welcome h2 {
+  font-size: 1.25em;
+  font-weight: 650;
+}
+.welcome p {
+  margin: 6px 0 16px;
+  color: var(--fg-2);
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.welcome-keys {
+  display: grid;
+  gap: 7px;
+  list-style: none;
+  color: var(--fg-2);
+  font-size: 12.5px;
+}
+.welcome-keys li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.welcome-keys kbd {
+  min-width: 128px;
+  text-align: center;
+}
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 18px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.welcome-card span {
+  color: var(--fg-2);
+}
+.primary-button {
+  margin-top: 4px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* --- settings ------------------------------------------------------------- */
+
+/* Settings stays solid at any opacity, so it's easy to read; the title bar
+   above it still shows the opacity chosen */
+.settings {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 10px 8px 16px;
+}
+.settings-header h2 {
+  font-size: 15px;
+  font-weight: 650;
+}
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 14px 18px;
+  font-size: 13px;
+}
+.settings-section h3 {
+  padding-left: 2px;
+  color: var(--fg-2);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.settings-section > .hint {
+  margin: 3px 2px 0;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--tint);
+}
+.hint {
+  display: block;
+  margin-top: 3px;
+  color: var(--fg-3);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  font-size: 12.5px;
+  font-weight: 550;
+}
+.field input:not([type]),
+.field input[type='text'],
+.field input[type='password'],
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  outline: none;
+  background: var(--tint-2);
+  color: var(--fg);
+  font: 13px/1.4 var(--font-ui);
+  user-select: text;
+}
+.field select option {
+  background: var(--bg);
+  color: var(--fg);
+}
+.field textarea {
+  resize: vertical;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: var(--accent);
+}
+.field input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.field-inline {
+  display: flex;
+  gap: 6px;
+}
+
+.text-button {
+  align-self: flex-start;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--accent-text);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+.text-button:hover {
+  background: var(--accent-soft);
+}
+
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--tint-2);
+}
+.segmented button {
+  padding: 4px 12px;
+  border-radius: 6px;
+  color: var(--fg-2);
+  font-size: 12.5px;
+}
+.segmented button.on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.toggle input[role='switch'] {
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--tint-2);
+  transition: background-color var(--fast) var(--ease);
+}
+.toggle input[role='switch']::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform var(--fast) var(--ease);
+}
+.toggle input[role='switch']:checked {
+  background: var(--accent);
+}
+.toggle input[role='switch']:checked::before {
+  transform: translateX(14px);
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+}
+.stepper span {
+  min-width: 40px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.swatch {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+.swatch.on {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+.swatch.custom:not(.on) {
+  background: conic-gradient(#ff5a52, #ffd866, #7ee0a1, #8cc8ff, #b48cff, #ff5a52);
+}
+.swatch.custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+}
+
+.shortcuts {
+  list-style: none;
+}
+.shortcuts li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+}
+.shortcuts li + li {
+  border-top: 1px solid var(--line);
+}
+.shortcut-action {
+  color: var(--fg-2);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.shortcut-error {
+  display: block;
+  margin-top: 2px;
+  color: var(--warn);
+  font-size: 11px;
+}
+.kbd {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--tint-2);
+  color: var(--fg);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.kbd.recording {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* --- motion --------------------------------------------------------------- */
+
+@keyframes turn-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
