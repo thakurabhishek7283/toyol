@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE, PANEL_COLORS, readableTextOn, TEXT_COLORS, type AutoScroll, type Config } from '../config';
 import type { Tone } from '../lib/ai';
 import { checkBinding, comboFromEvent, displayAccelerator, HOTKEY_DEFS, resolveHotkeys, type HotkeyId } from '../lib/hotkeys';
 import { listMicrophones } from '../lib/speech/recorder';
 import type { ModelStatus } from '../lib/speech/engine';
+import type { useUpdater } from '../hooks/useUpdater';
 import { Icon } from './Icon';
 
 const AUTO_SCROLL_OPTIONS: [AutoScroll, string][] = [['off', 'Off'], ['slow', 'Slow'], ['medium', 'Medium'], ['fast', 'Fast']];
@@ -22,15 +24,21 @@ interface SettingsProps {
   config: Config;
   setConfig: (updates: Partial<Config>) => void;
   modelStatus: ModelStatus;
+  updater: ReturnType<typeof useUpdater>;
   onRecordingShortcut: (recording: boolean) => void;
   onClose: () => void;
 }
 
 /** Settings, applied as they change */
-function Settings({ config, setConfig, modelStatus, onRecordingShortcut, onClose }: SettingsProps) {
+function Settings({ config, setConfig, modelStatus, updater, onRecordingShortcut, onClose }: SettingsProps) {
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [showKey, setShowKey] = useState(false);
+  const [version, setVersion] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => {});
+  }, []);
 
   // Opened from the keyboard: start there, so Tab goes through the settings
   useEffect(() => {
@@ -42,9 +50,19 @@ function Settings({ config, setConfig, modelStatus, onRecordingShortcut, onClose
   }, []);
 
   const modelNote =
-    modelStatus.state === 'loading' ? 'Loading the speech model…'
-      : modelStatus.state === 'failed' ? "The speech model couldn't load. Use the AI service instead, or restart toyol."
-        : `Whisper medium, on this PC${modelStatus.device ? ` (${modelStatus.device})` : ''}: transcribed as you talk, and nothing you say leaves it.`;
+    modelStatus.state === 'downloading' ? `Downloading the speech model (820 MB, just this once): ${Math.floor((modelStatus.progress ?? 0) * 100)}%…`
+      : modelStatus.state === 'loading' ? 'Loading the speech model…'
+        : modelStatus.state === 'failed' ? `The speech model couldn't load${modelStatus.error ? ` (${modelStatus.error})` : ''}. It tries again when you next talk; or use the AI service.`
+          : `Whisper medium, on this PC${modelStatus.device ? ` (${modelStatus.device})` : ''}: transcribed as you talk, and nothing you say leaves it.`;
+
+  const updateNote = {
+    idle: '',
+    checking: 'Checking…',
+    current: 'This is the latest version.',
+    available: `Version ${updater.version} is out.`,
+    installing: 'Installing: toyol closes for a moment and comes back updated…',
+    failed: `Couldn't update (${updater.error}).`,
+  }[updater.phase];
 
   return (
     <div className="settings" ref={rootRef} tabIndex={-1} role="region" aria-label="Settings">
@@ -153,6 +171,20 @@ function Settings({ config, setConfig, modelStatus, onRecordingShortcut, onClose
 
         <Section title="Shortcuts" note="Pick one (click it, or Enter), then press the new keys; Esc keeps the old ones. The Ctrl+Alt+Shift ones work anywhere, even locked.">
           <ShortcutList config={config} setConfig={setConfig} onRecording={onRecordingShortcut} />
+        </Section>
+
+        <Section title="About" note="Updates come from the toyol releases on GitHub. A new one shows in the title bar; it installs only when you click it.">
+          <div className="field-inline about">
+            <span className="field-label">toyol {version}</span>
+            {updater.phase === 'available' ? (
+              <button className="text-button" onClick={updater.install}>Install {updater.version}</button>
+            ) : (
+              <button className="text-button" onClick={updater.check} disabled={updater.phase === 'checking' || updater.phase === 'installing'}>
+                Check for updates
+              </button>
+            )}
+          </div>
+          {updateNote && <p className="hint">{updateNote}</p>}
         </Section>
       </div>
     </div>

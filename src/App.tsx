@@ -9,6 +9,7 @@ import { useHotkeys } from './hooks/useHotkeys';
 import { useMemory } from './hooks/useMemory';
 import { isOnAnyMonitor, useMovePanel } from './hooks/useMovePanel';
 import { useSnip } from './hooks/useSnip';
+import { useUpdater } from './hooks/useUpdater';
 import { useVoice } from './hooks/useVoice';
 import { parseAnswer } from './lib/answer';
 import { conversationTerms } from './lib/autocomplete';
@@ -40,6 +41,7 @@ function App() {
   );
   const { turns, busy, ask, stop, reset } = useChat(ai);
   const modelStatus = useSyncExternalStore(subscribeModelStatus, getModelStatus);
+  const updater = useUpdater();
 
   const [locked, setLocked] = useState(false);
   const [visible, setVisible] = useState(true);
@@ -385,23 +387,47 @@ function App() {
     '--opacity': config.opacity,
   } as CSSProperties;
 
+  // The first time, the speech model downloads (in the background from startup)
+  const downloaded = Math.floor((modelStatus.progress ?? 0) * 100);
+  const modelNote = config.speechEngine !== 'local' || voice.phase === 'idle' ? null
+    : modelStatus.state === 'downloading' ? `downloading the speech model, once · ${downloaded}%`
+      : modelStatus.state === 'loading' ? 'loading the speech model' : null;
+
   const status = move.moving ? <MoveStatus /> : (
     <VoiceStatus
       phase={voice.phase}
       level={voice.level}
       since={voice.since}
       liveText={voice.liveText}
-      modelLoading={config.speechEngine === 'local' && voice.phase !== 'idle' && modelStatus.state === 'loading'}
+      modelNote={modelNote}
       note={note}
       holdToTalk={config.holdToTalk}
     />
+  );
+
+  const titleStatus = locked ? <span className="chip warn">Locked</span> : (
+    <>
+      {modelStatus.state === 'downloading' && (
+        <span className="chip" title="The speech model for voice on this PC, downloaded once">Speech model {downloaded}%</span>
+      )}
+      {(updater.phase === 'available' || updater.phase === 'installing') && (
+        <button
+          className="chip accent"
+          onClick={updater.install}
+          disabled={updater.phase === 'installing'}
+          title="Install it now: toyol closes for a moment and comes back updated"
+        >
+          {updater.phase === 'installing' ? 'Updating…' : `Update to ${updater.version}`}
+        </button>
+      )}
+    </>
   );
 
   return (
     <div className={`app${locked ? ' locked' : ''}${move.moving ? ' moving' : ''}`} style={style}>
       <TitleBar
         locked={locked}
-        status={locked ? <span className="chip warn">Locked</span> : null}
+        status={titleStatus}
         canReset={turns.length > 0 || draft !== '' || image !== null}
         onNewChat={newChat}
         onToggleLock={toggleLock}
@@ -414,6 +440,7 @@ function App() {
           config={config}
           setConfig={setConfig}
           modelStatus={modelStatus}
+          updater={updater}
           onRecordingShortcut={setRecordingShortcut}
           onClose={() => setShowSettings(false)}
         />
@@ -473,7 +500,7 @@ interface VoiceStatusProps {
   level: number;
   since: number;
   liveText: string; // what's been heard so far
-  modelLoading: boolean; // the speech model is still loading for this request
+  modelNote: string | null; // what the speech model is still doing for this request
   note: string | null;
   holdToTalk: boolean;
 }
@@ -482,7 +509,7 @@ interface VoiceStatusProps {
  * Above the question box: listening (with a level meter, time, and what's been
  * heard so far), transcribing, or a short note
  */
-function VoiceStatus({ phase, level, since, liveText, modelLoading, note, holdToTalk }: VoiceStatusProps) {
+function VoiceStatus({ phase, level, since, liveText, modelNote, note, holdToTalk }: VoiceStatusProps) {
   const [, tick] = useState(0);
   useEffect(() => {
     if (phase !== 'listening') return;
@@ -500,7 +527,7 @@ function VoiceStatus({ phase, level, since, liveText, modelLoading, note, holdTo
         {heard}
         <div className="status listening" role="status">
           <span className="rec-dot" aria-hidden="true" />
-          <span>{modelLoading ? 'Listening · loading the speech model…' : 'Listening'}</span>
+          <span>{modelNote ? `Listening · ${modelNote}…` : 'Listening'}</span>
           <span className="meter" aria-hidden="true"><span style={{ transform: `scaleX(${Math.max(0.04, level)})` }} /></span>
           <span className="time">{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}</span>
           <span className="status-hint">{holdToTalk ? 'let go to send' : 'press again or let go to send'}</span>
@@ -514,7 +541,7 @@ function VoiceStatus({ phase, level, since, liveText, modelLoading, note, holdTo
         {heard}
         <div className="status" role="status">
           <span className="spinner" aria-hidden="true" />
-          {modelLoading ? 'Loading the speech model…' : 'Transcribing…'}
+          {modelNote ? `${modelNote[0].toUpperCase()}${modelNote.slice(1)}…` : 'Transcribing…'}
         </div>
       </>
     );

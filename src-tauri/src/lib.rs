@@ -9,18 +9,36 @@ mod mouse_hook;
 mod screen_capture;
 #[cfg(windows)]
 mod windows_api;
+mod model;
 pub mod speech;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use speech::{Pass, Speech};
 use tauri::ipc::{InvokeBody, Request};
-use tauri::path::BaseDirectory;
 use tauri::webview::{PermissionKind, PermissionResponse};
-use tauri::{Manager, State, WebviewWindow};
+use tauri::{Emitter, Manager, State, WebviewWindow};
 
-// Bundled with the app (scripts/fetch-models.mjs)
-const SPEECH_MODEL: &str = "models/ggml-medium.en-q8_0.bin";
+/// Progress of the speech model's download, as the "speech-download" event
+#[derive(Clone, serde::Serialize)]
+struct Download {
+    received: u64,
+    total: u64,
+}
+
+/// Where the speech model is, or goes once downloaded (model.rs)
+fn speech_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    // A development build uses the copy scripts/fetch-models.mjs keeps
+    #[cfg(debug_assertions)]
+    {
+        let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/models").join(model::FILE);
+        if dev.exists() {
+            return Ok(dev);
+        }
+    }
+    Ok(app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("models").join(model::FILE))
+}
 
 #[cfg(windows)]
 const SNIP_WINDOW: &str = "snip";
@@ -123,11 +141,22 @@ async fn open_snip_window(app: tauri::AppHandle) -> Result<(), String> {
 /// Load the speech model (see speech.rs). Returns what it runs on.
 #[tauri::command]
 async fn speech_load(app: tauri::AppHandle, speech: State<'_, Arc<Speech>>) -> Result<String, String> {
-    let path = app.path().resolve(SPEECH_MODEL, BaseDirectory::Resource).map_err(|e| e.to_string())?;
+    let path = speech_model_path(&app)?;
     let speech = Arc::clone(&speech);
-    tauri::async_runtime::spawn_blocking(move || speech.load(&path))
-        .await
-        .map_err(|e| format!("Speech thread failed: {}", e))?
+    tauri::async_runtime::spawn_blocking(move || {
+        // The first time, download it, telling the panel every percent
+        let mut shown = u64::MAX;
+        model::ensure(&path, |received, total| {
+            let percent = if total > 0 { received * 100 / total } else { 0 };
+            if percent != shown {
+                shown = percent;
+                let _ = app.emit("speech-download", Download { received, total });
+            }
+        })?;
+        speech.load(&path)
+    })
+    .await
+    .map_err(|e| format!("Speech thread failed: {}", e))?
 }
 
 /// One recognition pass. Binary, so audio doesn't go through JSON: the body is
@@ -169,6 +198,8 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         // Voice input records in the webview. Its permission prompt would be a
         // separate window that shows up in screen shares, and the webview only
         // ever loads this app, so allow the microphone without one. It's open

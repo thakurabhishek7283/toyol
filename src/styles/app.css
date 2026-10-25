@@ -63,6 +63,20 @@ kbd {
   background: var(--warn-soft);
   color: var(--warn);
 }
+.chip:not(.warn, .accent) {
+  background: var(--tint-2);
+  color: var(--fg-2);
+}
+/* A newer version, to install (useUpdater) */
+.chip.accent {
+  border: none;
+  font-family: inherit;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.chip.accent:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
 
 /* --- title bar ------------------------------------------------------------ */
 
@@ -857,6 +871,10 @@ kbd {
 .field-inline {
   display: flex;
   gap: 6px;
+}
+.field-inline.about {
+  align-items: center;
+  justify-content: space-between;
 }
 
 .text-button {

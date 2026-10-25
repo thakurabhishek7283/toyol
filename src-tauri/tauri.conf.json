@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "toyol",
   "mainBinaryName": "toyol",
-  "version": "0.1.0",
+  "version": "../package.json",
   "identifier": "com.toyol.app",
   "build": {
     "frontendDist": "../dist",
@@ -33,9 +33,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "resources": {
-      "resources/models/": "models/"
-    },
+    "createUpdaterArtifacts": true,
     "publisher": "toyol",
     "icon": [
       "icons/32x32.png",
@@ -47,6 +45,15 @@
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ2NDlBNUQzRUFEQTYyQzYKUldUR1l0cnEwNlZKUmkrMHlBMllqUGxhc2FEVDg4MHhZMWZyamVpRE5YNjdGNkIwYVNrWDQ0M3gK",
+      "endpoints": ["https://github.com/thakurabhishek7283/toyol/releases/latest/download/latest.json"],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

@@ -15,8 +15,9 @@ No documents, no notes, no search: just questions in and answers out.
   few key points. Under them: **Details** (how and why, an example, code) and **Follow-ups**
   (the likely next questions with short answers; click one to ask it). Older answers fold down
   to the question and the glance.
-- **Hands-free reading**: a new answer comes into view, gives you a moment for the question and
-  the bold answer, then scrolls down slowly to the end (Settings › Appearance › *Auto-scroll
+- **Hands-free reading**: a new answer jumps to the top of the panel, wherever you'd scrolled.
+  A long one waits as long as reading five lines takes at the set pace (time for the question
+  and the bold answer), then scrolls down slowly to the end (Settings › Appearance › *Auto-scroll
   answers*: off, slow, medium or fast). Scrolling yourself stops it until the next answer.
 - **Voice input**, tuned for accuracy (see [Transcription](#transcription)). Tap the voice key (or
   the mic button) to start and again to stop, or hold it while talking. With Settings › Voice ›
@@ -44,7 +45,9 @@ No documents, no notes, no search: just questions in and answers out.
   unlocks; Ctrl+scroll over the panel scrolls the answers. The type shortcut unlocks until you
   click back into your app, then locks again; voice and screenshots work while locked.
 - **Make it yours**: background opacity (what's behind shows through, the text stays solid),
-  text size, panel and text colors, and every shortcut.
+  text size, panel and text colors, and every shortcut. Settings › Answers › **Tone** sets how
+  answers are worded (conversational, professional, simple, technical, or your own description)
+  while keeping their layout.
 
 ## Shortcuts
 
@@ -81,8 +84,10 @@ transcription keeps your voice on the PC.
 ## Transcription
 
 Voice runs on **Whisper medium (English)** in [whisper.cpp](https://github.com/ggml-org/whisper.cpp),
-bundled with the app, so it works offline from the first launch and nothing you say leaves the
-PC. Around it:
+on the PC, so nothing you say leaves it. The model (~820 MB) isn't in the installer, which keeps
+installs and updates small: it downloads once in the background at the first start (progress in
+the title bar; pinned, checksummed, and resumed if the connection drops), then works offline and
+survives updates. Around it:
 
 - **Transcribed as you talk**: the text shows above the question box while you speak, and
   there's next to nothing left to do when you stop. Whisper doesn't stream, so the part of the
@@ -122,12 +127,13 @@ Needs Windows 10 (2004+) or 11, Node.js 20+ and [rustup](https://rustup.rs/).
 
 ```bash
 npm install
-npm run tauri:dev     # run it
+npm run tauri:dev     # run it: the interface reloads as you edit, the Rust side rebuilds
 npm run tauri:build   # installer in <Cargo's target folder>/release/bundle/nsis/
 ```
 
-Both first download the bundled speech model (~820 MB, pinned and checksummed, resumes if the
-connection drops) into `src-tauri/resources/models/`.
+`tauri:dev` first downloads the speech model into `src-tauri/resources/models/`, which
+development builds use. Builds are signed for the updater, so `tauri:build` needs the signing key
+in `TAURI_SIGNING_PRIVATE_KEY` (see [Releases](#releases)).
 
 whisper.cpp is built with the app, which also needs Visual Studio's C++ tools (with its CMake),
 the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows), and libclang (from
@@ -150,6 +156,28 @@ accuracy and the wait after you stop, with the app's engine; give it other whisp
 to compare, or `BENCH_BATCH=1` to transcribe each clip only once it ends), and `node
 scripts/try-answers.mjs "question"` (shows how the AI service answers and how the answer splits
 up).
+
+## Releases
+
+Installed copies update themselves from this repository's
+[GitHub releases](https://github.com/thakurabhishek7283/toyol/releases). They look at startup and
+every six hours; a newer version shows as **Update to x.y.z** in the title bar (and in Settings ›
+About), and installs only when clicked: toyol closes for a few seconds and comes back updated,
+settings and speech model kept. Installing a newer installer by hand upgrades in place too.
+
+To publish one, from a clean, committed tree:
+
+```bash
+npm run release -- 0.2.0 "What changed"
+```
+
+It sets the version (package.json, which tauri.conf.json reads, and Cargo.toml), builds the
+signed installer, commits "Release 0.2.0", tags `v0.2.0`, pushes, and creates the release with
+the installer and the `latest.json` the app checks. It needs the
+[GitHub CLI](https://cli.github.com/), signed in (`gh auth login`), and the signing key from
+`npx tauri signer generate -w ~/.tauri/toyol.key`, whose public half is in tauri.conf.json.
+**Back up the key**: installed copies accept only updates signed with it, so without it they can't
+be updated again.
 
 ## Credits
 

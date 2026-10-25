@@ -1,5 +1,5 @@
-// Speech to text on this PC, with whisper.cpp. The model ships with the app
-// (scripts/fetch-models.mjs) and runs on the GPU through Vulkan, which every
+// Speech to text on this PC, with whisper.cpp. The model is downloaded on first
+// use (model.rs) and runs on the GPU through Vulkan, which every
 // graphics driver provides, or on the CPU if there's no usable GPU. Audio never
 // leaves the machine.
 //

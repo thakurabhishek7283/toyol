@@ -1,9 +1,10 @@
-// Downloads the speech model bundled with the app into
-// src-tauri/resources/models, which tauri.conf.json ships as resources. It's
-// too big for git (~820 MB), so this runs before every `tauri dev` / `tauri
-// build` (see package.json). The file is pinned to a revision and checked
-// against its SHA-256, so every build bundles exactly the same bytes; a file
-// already present and intact is skipped, and a dropped download resumes.
+// Downloads the speech model into src-tauri/resources/models, for development
+// builds (and scripts/bench-speech.mjs). It's too big for git (~820 MB), so
+// this runs before every `tauri dev` (see package.json). Installed copies
+// download it themselves on first use instead (src-tauri/src/model.rs), so the
+// installer stays small. The file is pinned to a revision and checked against
+// its SHA-256; a file already present and intact is skipped, and a dropped
+// download resumes.
 // Adapted from ScreenPrompt (MIT).
 
 import { createHash } from 'node:crypto';
@@ -22,7 +23,7 @@ const ATTEMPTS = 40; // each attempt resumes, so a flaky connection still gets t
 // technical terms right through noise and chatter, where small.en got 17 and
 // large-v3-turbo did worse with people talking in the background. 8-bit is
 // near-lossless next to the 16-bit original and half its size. Keep in sync
-// with SPEECH_MODEL in src-tauri/src/lib.rs.
+// with src-tauri/src/model.rs.
 const REVISION = '5359861c739e955e79d9a303bcbc70fb988958b1';
 const MODELS = {
   'ggml-medium.en-q8_0.bin': '43fa2cd084de5a04399a896a9a7a786064e221365c01700cea4666005218f11c',
