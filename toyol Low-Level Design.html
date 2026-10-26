@@ -1,0 +1,1005 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>toyol Low-Level Design</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a reference manual. Sticky contents rail on the left, one reading column on the right; tables and diagrams scroll inside their own frames. */
+:root {
+  --bg: #f4f6f4;
+  --surface: #ffffff;
+  --ink: #18201c;
+  --muted: #56625b;
+  --line: #d9e0db;
+  --accent: #1d7556;
+  --accent-soft: #e2f1ea;
+  --code-bg: #eef2ef;
+  --fe: #3d6fb4; --fe-soft: #e3ecf8;
+  --rust: #b8670b; --rust-soft: #fbeedd;
+  --data: #4f8a3c; --data-soft: #e5f1df;
+  --ext: #7d5a9a; --ext-soft: #efe7f5;
+  --ipc: #a88a1c; --ipc-soft: #f8f0d2;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --step--1: 0.8125rem; --step-0: 1rem; --step-1: 1.1875rem; --step-2: 1.5rem; --step-3: 2.25rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111513; --surface: #181d1a; --ink: #e5ebe7; --muted: #9aa69f; --line: #2b332e;
+    --accent: #5fc79d; --accent-soft: #1b2e25; --code-bg: #1f2622;
+    --fe: #8ab4ec; --fe-soft: #1c2738; --rust: #f0a858; --rust-soft: #33251a;
+    --data: #93cf7d; --data-soft: #1e2d1a; --ext: #c3a3e0; --ext-soft: #2a2133;
+    --ipc: #e2c45a; --ipc-soft: #2f2a17;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111513; --surface: #181d1a; --ink: #e5ebe7; --muted: #9aa69f; --line: #2b332e;
+  --accent: #5fc79d; --accent-soft: #1b2e25; --code-bg: #1f2622;
+  --fe: #8ab4ec; --fe-soft: #1c2738; --rust: #f0a858; --rust-soft: #33251a;
+  --data: #93cf7d; --data-soft: #1e2d1a; --ext: #c3a3e0; --ext-soft: #2a2133;
+  --ipc: #e2c45a; --ipc-soft: #2f2a17;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: var(--step-0); line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.shell { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-block: 40px 80px; }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; font-size: var(--step--1); }
+nav.toc .label { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+nav.toc a { display: block; padding: 4px 10px; border-radius: 6px; color: var(--muted); text-decoration: none; border-left: 2px solid transparent; }
+nav.toc a:hover { color: var(--ink); background: var(--surface); }
+nav.toc a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+nav.toc .num { font-family: var(--font-mono); font-size: 0.72rem; margin-right: 6px; color: var(--accent); }
+main { min-width: 0; }
+header.top { display: grid; gap: 14px; padding-bottom: 28px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.78rem; color: var(--accent); letter-spacing: 0.04em; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: var(--step-3); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: var(--step-2); font-weight: 700; display: flex; gap: 12px; align-items: baseline; }
+h2 .num { font-family: var(--font-mono); font-size: 0.9rem; color: var(--accent); font-weight: 500; }
+h3 { font-size: var(--step-1); font-weight: 500; margin-top: 8px; }
+p { margin: 0; max-width: 72ch; }
+.lede { font-size: 1.08rem; color: var(--muted); max-width: 70ch; }
+section { display: grid; gap: 16px; padding-block: 36px 8px; scroll-margin-top: 16px; }
+.stack { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { font-family: var(--font-mono); font-size: 0.74rem; padding: 3px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.frame { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.frame.diagram { padding: 16px; }
+pre.mermaid { margin: 0; font-family: var(--font-mono); font-size: 0.8rem; background: transparent; min-width: 560px; white-space: pre; }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; background: var(--bg); position: sticky; top: 0; }
+tr:last-child td { border-bottom: 0; }
+td code { white-space: nowrap; }
+td.wrap code { white-space: normal; }
+.layer { display: inline-block; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 1px 7px; border-radius: 4px; }
+.l-fe { color: var(--fe); background: var(--fe-soft); }
+.l-rust { color: var(--rust); background: var(--rust-soft); }
+.l-data { color: var(--data); background: var(--data-soft); }
+.l-ext { color: var(--ext); background: var(--ext-soft); }
+.l-ipc { color: var(--ipc); background: var(--ipc-soft); }
+.layers { display: grid; gap: 6px; }
+.band { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 14px; align-items: center; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); }
+.band .what { font-size: 0.86rem; color: var(--muted); }
+.band .what code { color: var(--ink); }
+.band.fe { border-left: 4px solid var(--fe); }
+.band.ipc { border-left: 4px solid var(--ipc); }
+.band.rust { border-left: 4px solid var(--rust); }
+.band.os { border-left: 4px solid var(--muted); }
+.callout { background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; font-size: 0.92rem; max-width: 80ch; }
+.callout strong { color: var(--accent); }
+.bytes { display: flex; min-width: 560px; font-family: var(--font-mono); font-size: 0.76rem; }
+.bytes > div { padding: 10px 12px; border: 1px solid var(--line); border-right: 0; display: grid; gap: 2px; }
+.bytes > div:last-child { border-right: 1px solid var(--line); flex: 1; }
+.bytes .off { color: var(--muted); font-size: 0.68rem; }
+.bytes .b-len { background: var(--ipc-soft); }
+.bytes .b-txt { background: var(--fe-soft); }
+.bytes .b-pcm { background: var(--data-soft); }
+.bytes .b-px { background: var(--rust-soft); }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.card h3 { margin: 0; font-size: 1.02rem; }
+.card p, .card li { font-size: 0.9rem; }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.formula { font-family: var(--font-mono); font-size: 0.82rem; background: var(--code-bg); border-radius: 6px; padding: 10px 12px; overflow-x: auto; white-space: pre; }
+.num-col { font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.82rem; white-space: nowrap; }
+footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--step--1); }
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-block: 24px 60px; }
+  nav.toc { position: static; max-height: none; }
+  nav.toc ol { display: flex; flex-wrap: wrap; gap: 4px; }
+  nav.toc a { border: 1px solid var(--line); background: var(--surface); padding: 3px 9px; }
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .band { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  h1 { font-size: 1.85rem; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="shell">
+  <nav class="toc" aria-label="Contents">
+    <div class="label">Contents</div>
+    <ol>
+      <li><a href="#layers"><span class="num">01</span>Layers &amp; modules</a></li>
+      <li><a href="#model"><span class="num">02</span>Data model</a></li>
+      <li><a href="#ipc"><span class="num">03</span>IPC contract</a></li>
+      <li><a href="#flows"><span class="num">04</span>Runtime flows</a></li>
+      <li><a href="#states"><span class="num">05</span>State machines</a></li>
+      <li><a href="#algorithms"><span class="num">06</span>Algorithms</a></li>
+      <li><a href="#threads"><span class="num">07</span>Concurrency</a></li>
+      <li><a href="#storage"><span class="num">08</span>Persistence</a></li>
+      <li><a href="#errors"><span class="num">09</span>Failure handling</a></li>
+      <li><a href="#security"><span class="num">10</span>Security &amp; privacy</a></li>
+      <li><a href="#testing"><span class="num">11</span>Testing</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="top">
+      <div class="eyebrow">toyol · v0.1.0 · low-level design</div>
+      <h1>toyol Low-Level Design</h1>
+      <p class="lede">How the overlay works inside: its modules, data types, the contract between the WebView and Rust, each runtime flow step by step, the state machines, and the algorithms behind voice, answers and autocomplete. It goes with the high-level diagram in <code>docs/architecture/toyol-hld.drawio</code>.</p>
+      <div class="stack">
+        <span class="pill">Tauri 2.12</span><span class="pill">React 19.2</span><span class="pill">TypeScript 5.9</span><span class="pill">Vite 7</span>
+        <span class="pill">windows 0.58</span><span class="pill">whisper-rs-sys 0.15 · Vulkan</span><span class="pill">reqwest 0.13 · rustls</span>
+        <span class="pill">openai SDK 7 · Responses API</span><span class="pill">marked + DOMPurify</span><span class="pill">vitest 5</span>
+      </div>
+    </header>
+
+    <!-- 01 -->
+    <section id="layers">
+      <h2><span class="num">01</span>Layers and module map</h2>
+      <p>Calls go down the stack and events come back up. The domain libraries in <code>src/lib</code> have no React in them. Several also avoid Tauri and the DOM (<code>ai</code>, <code>answer</code>, <code>autocomplete</code>, <code>snip</code>, <code>speech/audio</code>, <code>speech/live</code>, <code>speech/transcript</code>), so vitest and the Node scripts (<code>bench-speech.mjs</code>, <code>try-answers.mjs</code>) can run the same code the app does.</p>
+      <div class="layers">
+        <div class="band fe"><span class="layer l-fe">Components</span><span class="what"><code>App</code> (composition root) · <code>TitleBar</code> · <code>Conversation</code> · <code>Composer</code> · <code>Settings</code> · <code>SnipOverlay</code> (second window)</span></div>
+        <div class="band fe"><span class="layer l-fe">Hooks</span><span class="what"><code>useChat</code> · <code>useVoice</code> · <code>useSnip</code> · <code>useHotkeys</code> · <code>useMovePanel</code> · <code>useConfig</code> · <code>useMemory</code> · <code>useUpdater</code> · <code>useAutoScroll</code></span></div>
+        <div class="band fe"><span class="layer l-fe">Libraries</span><span class="what"><code>ai</code> · <code>answer</code> · <code>autocomplete</code> + <code>words</code> · <code>hotkeys</code> · <code>takeKeys</code> · <code>snip</code> · <code>capture</code> · <code>markdown</code> · <code>speech/{recorder, audio, live, transcript, engine}</code></span></div>
+        <div class="band ipc"><span class="layer l-ipc">IPC</span><span class="what"><code>invoke()</code> for 12 commands, <code>listen()</code> / <code>emitTo()</code> for 6 events, plus plugin JS APIs (store, global-shortcut, clipboard, updater, process)</span></div>
+        <div class="band rust"><span class="layer l-rust">Rust commands</span><span class="what"><code>lib.rs</code>: handlers, plugin setup, microphone permission, capture exclusion and arrow cursor at startup</span></div>
+        <div class="band rust"><span class="layer l-rust">Rust modules</span><span class="what"><code>speech.rs</code> · <code>model.rs</code> · <code>windows_api.rs</code> · <code>mouse_hook.rs</code> · <code>keyboard_hook.rs</code> · <code>screen_capture.rs</code></span></div>
+        <div class="band os"><span class="layer" style="color:var(--muted);background:var(--code-bg)">Platform</span><span class="what">Win32 (user32, gdi32, DWM) · WebView2 · Vulkan GPU · microphone</span></div>
+      </div>
+
+      <div class="frame">
+        <table>
+          <thead><tr><th>Module</th><th>Responsibility</th><th>Key API</th></tr></thead>
+          <tbody>
+            <tr><td><span class="layer l-fe">fe</span> <code>main.tsx</code></td><td>Entry point. Renders <code>SnipOverlay</code> when the URL hash is <code>#snip</code>, else <code>App</code>. Disables the context menu.</td><td class="wrap">—</td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>App.tsx</code></td><td>Wires every hook together. Restores the window once (logical size, physical position, top-right corner on first run), saves geometry 400 ms after a move or resize (skips the −32000 minimized position), runs lock / unlock and quick-ask re-lock, decides the voice and snip routing (send now or put in the box).</td><td class="wrap"><code>send(text, source, image)</code>, <code>applyLock(on)</code>, <code>focusInput()</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>Conversation.tsx</code></td><td>Renders turns. The latest is expanded and older ones fold to question + glance: <code>expanded = isLast XOR flipped</code>. Handles <code>locked-scroll</code> (60 px a notch), code-block copy, and links that never navigate.</td><td class="wrap"><code>TurnView</code>, <code>stripFormat()</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>Composer.tsx</code></td><td>Textarea that grows to 6 lines. Ghost text and a list from <code>suggest()</code>: Tab accepts, → takes one word, ↑/↓ steps through history. Mic button with press and release, snip button, PageUp/PageDown scroll the answers.</td><td class="wrap"><code>onSend</code>, <code>onMicDown/Up</code>, <code>onPage</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>Settings.tsx</code></td><td>Every config section, the shortcut recorder (it suspends <code>useHotkeys</code> while recording), the mic list, model status, the update check.</td><td class="wrap"><code>onRecordingShortcut(bool)</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>SnipOverlay.tsx</code></td><td>The <code>snip</code> window. Turns pointer events and forwarded keys into <code>snipStep</code> calls, converts CSS px to physical px (× devicePixelRatio, + window origin), emits <code>snip</code> to <code>main</code>, then closes.</td><td class="wrap"><code>SNIP_EVENT</code>, <code>SNIP_KEY_EVENT</code>, <code>SNIP_CANCEL_EVENT</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>useChat</code></td><td>Holds the conversation. One <code>AbortController</code> per ask. Sends the last 6 non-failed turns as history, with old screenshots replaced by a note. Mirrors turns into a ref so streaming patches never use a stale array.</td><td class="wrap"><code>ask</code>, <code>stop</code>, <code>reset</code>, <code>turns</code>, <code>busy</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>useVoice</code></td><td>Voice phases, tap vs hold (450 ms), the 100 ms live-update interval, and routing to the local live transcript or cloud transcription.</td><td class="wrap"><code>keyDown</code>, <code>keyUp</code>, <code>toggle</code>, <code>phase</code>, <code>liveText</code>, <code>level</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>useSnip</code></td><td>Opens the snip window and takes Esc, Enter, Ctrl+A and the arrows system-wide while it's open (the window never has focus). Captures the region when <code>snip</code> arrives.</td><td class="wrap"><code>snip()</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>useHotkeys</code></td><td>Global shortcuts go through the plugin, with registrations run through a serial queue. Focused-only shortcuts use a capture-phase keydown listener.</td><td class="wrap"><code>HotkeyHandlers</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>useMovePanel</code></td><td>Moves the panel with the arrow keys (taken system-wide): 10 px steps, 40 px once held over 700 ms. Shift+arrow sends it to that edge, Ctrl+arrow resizes. Releases the keys after 10 s idle. One window change in flight at a time.</td><td class="wrap"><code>toggle</code>, <code>escapeIsOurs()</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>useConfig</code> / <code>useMemory</code></td><td>Load and save the store files. Config saves on every change through a serial promise queue; memory saves 1.5 s after the last change.</td><td class="wrap"><code>setConfig(partial)</code>, <code>rememberQuestion</code>, <code>rememberTerms</code></td></tr>
+            <tr><td><span class="layer l-fe">fe</span> <code>useUpdater</code> / <code>useAutoScroll</code></td><td>Checks for updates quietly at start and every 6 h (production builds only). Auto-scroll puts a new answer at the top, then scrolls at reading pace.</td><td class="wrap"><code>install()</code>, <code>check()</code></td></tr>
+            <tr><td><span class="layer l-fe">lib</span> <code>ai.ts</code></td><td>System instructions (the answer format), tone rules, the cached OpenAI client (keyed on endpoint + key, <code>maxRetries: 1</code>), streaming, cloud transcription, user-facing error text.</td><td class="wrap"><code>streamAnswer</code>, <code>transcribeCloud</code>, <code>userMessage</code>, <code>instructionsFor</code>, <code>describeError</code></td></tr>
+            <tr><td><span class="layer l-fe">lib</span> <code>answer.ts</code></td><td>Splits a reply, finished or still streaming, into question, glance, details and follow-ups.</td><td class="wrap"><code>parseAnswer(text): ParsedAnswer</code></td></tr>
+            <tr><td><span class="layer l-fe">lib</span> <code>speech/*</code></td><td><code>recorder</code>: mic to 16 kHz Float32 buffer (120 s max). <code>audio</code>: trim, normalize, split. <code>live</code>: incremental Whisper passes. <code>transcript</code>: prompt and clean-up. <code>engine</code>: model status store, local passes over IPC, cloud path.</td><td class="wrap"><code>LiveTranscript</code>, <code>prepareSpeech</code>, <code>buildPrompt</code>, <code>cleanTranscript</code>, <code>loadSpeechModel</code></td></tr>
+            <tr><td><span class="layer l-fe">lib</span> <code>snip.ts</code> / <code>capture.ts</code></td><td>The pure two-click state machine, then BGRA bytes to a JPEG data URL (longest edge ≤ 2000 px, quality 0.9).</td><td class="wrap"><code>snipStep</code>, <code>snipClick</code>, <code>captureRegion</code></td></tr>
+            <tr><td><span class="layer l-fe">lib</span> <code>hotkeys.ts</code> / <code>takeKeys.ts</code></td><td>Shortcut definitions, parsing accelerators (<code>Ctrl+Alt+Shift+KeyH</code>), checking bindings. Plain keys can be taken for a while with software key repeat.</td><td class="wrap"><code>HOTKEY_DEFS</code>, <code>resolveHotkeys</code>, <code>takeKeys</code></td></tr>
+            <tr><td><span class="layer l-rust">rust</span> <code>lib.rs</code></td><td>Registers plugins and commands. Allows the microphone without a prompt (a prompt window would show in screen shares). At setup: capture exclusion and the arrow-cursor subclass on <code>main</code>.</td><td class="wrap">12 <code>#[tauri::command]</code>s</td></tr>
+            <tr><td><span class="layer l-rust">rust</span> <code>speech.rs</code></td><td>The whisper.cpp context and state behind a <code>Mutex</code>. Picks a GPU, falls back to the CPU, runs a warm-up pass, numbers passes so they can be cancelled.</td><td class="wrap"><code>Speech::load</code>, <code>transcribe</code>, <code>cancel</code></td></tr>
+            <tr><td><span class="layer l-rust">rust</span> <code>model.rs</code></td><td>Downloads a pinned, checksummed model with Range resume.</td><td class="wrap"><code>ensure(path, progress)</code></td></tr>
+            <tr><td><span class="layer l-rust">rust</span> <code>windows_api.rs</code></td><td>Capture exclusion (layered window, then <code>WDA_EXCLUDEFROMCAPTURE</code>), click-through, showing without focus, keeping the arrow cursor on resize borders.</td><td class="wrap"><code>apply_capture_exclusion</code>, <code>set_click_through</code></td></tr>
+            <tr><td><span class="layer l-rust">rust</span> <code>mouse_hook.rs</code> / <code>keyboard_hook.rs</code></td><td>Low-level hooks on their own message-loop threads, installed only while locked.</td><td class="wrap"><code>install_hook</code>, <code>uninstall_hook</code>, <code>set_unlock_zone</code></td></tr>
+            <tr><td><span class="layer l-rust">rust</span> <code>screen_capture.rs</code></td><td>Copies a desktop area with <code>BitBlt</code> through DWM, so windows excluded from capture are left out. No <code>CAPTUREBLT</code>, which would make the cursor flicker.</td><td class="wrap"><code>capture(x, y, w, h)</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section id="model">
+      <h2><span class="num">02</span>Data model</h2>
+      <p>The main TypeScript types and how they relate. A <code>Turn</code> holds raw model text; <code>ParsedAnswer</code> is worked out from it on every render (memoized), never stored.</p>
+      <div class="frame diagram">
+<pre class="mermaid">
+classDiagram
+  direction LR
+  class Config {
+    x, y: number or null (physical px)
+    width, height: number (logical px)
+    locked: boolean
+    opacity, fontSize, bgColor, textColor
+    hideFromCapture: boolean
+    autoScroll: off, slow, medium, fast
+    hotkeys: Record~HotkeyId,string~
+    aiEndpoint, aiModel, aiApiKey: string
+    tone: Tone
+    customTone: string
+    speechEngine: local or cloud
+    cloudSpeechModel, vocabulary, micId
+    holdToTalk, autoSend: boolean
+  }
+  class AiSettings {
+    endpoint: string
+    model: string
+    apiKey: string
+    tone: Tone
+    customTone: string
+  }
+  class Turn {
+    id: number
+    input: string
+    source: InputSource
+    image: string (JPEG data URL)
+    answer: string (raw Markdown so far)
+    state: thinking, writing, done, stopped, failed
+    error: string
+  }
+  class ChatMessage {
+    role: user or assistant
+    content: string or input_text and input_image parts
+  }
+  class ParsedAnswer {
+    question: string
+    glance: string
+    details: string
+    followUps: FollowUp[]
+  }
+  class FollowUp {
+    question: string
+    answer: string
+  }
+  class Memory {
+    questions: string[] (max 300, newest first)
+    words: Record~string,number~ (max 5000)
+    next: Record~string,Record~string,number~~
+  }
+  class ModelStatus {
+    state: idle, downloading, loading, ready, failed
+    device: string
+    progress: 0 to 1
+    error: string
+  }
+  class LiveTranscript {
+    -audio: Float32Array
+    -settled: string[]
+    -settledEnd: number
+    -heard: end and text
+    -running: Promise or null
+    +update(audio)
+    +finish(audio) Promise~string~
+  }
+  class SpeechPasses {
+    pass(audio, prompt, maxTokens, final) text or null
+    cancel()
+  }
+  Config ..> AiSettings : App derives
+  AiSettings ..> ChatMessage : streamAnswer sends
+  Turn ..> ChatMessage : history via userMessage
+  Turn ..> ParsedAnswer : parseAnswer(answer)
+  ParsedAnswer *-- FollowUp
+  LiveTranscript --> SpeechPasses : localPasses
+</pre>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Rust: <code>speech.rs</code></h3>
+          <div class="formula">struct Speech {
+  model: Mutex&lt;Option&lt;Model&gt;&gt;,   // one pass at a time
+  device: Mutex&lt;String&gt;,          // GPU name or "CPU"
+  next_pass: AtomicU64,            // starts at 1
+  cancelled_through: AtomicU64,    // passes ≤ this abort
+}
+struct Model { ctx: *mut whisper_context,
+               state: *mut whisper_state }  // unsafe impl Send
+struct Pass&lt;'a&gt; { audio: &amp;[f32], prompt: &amp;str,
+                  max_tokens: i32, final_pass: bool }</div>
+          <p>Registered with <code>.manage(Arc::new(Speech::default()))</code> and taken as <code>State&lt;Arc&lt;Speech&gt;&gt;</code>. <code>Drop for Model</code> frees the state, then the context.</p>
+        </div>
+        <div class="card">
+          <h3>Small value types</h3>
+          <ul>
+            <li><code>InputSource</code> = <code>typed | voice | screen</code>: tells the model how to read the input.</li>
+            <li><code>Tone</code> = <code>default | conversational | professional | simple | technical | custom</code>.</li>
+            <li><code>ScreenRect</code> {x, y, width, height}: physical px in virtual-screen coordinates.</li>
+            <li><code>SnipState</code> = <code>{first}</code> or <code>{second, anchor, pressed}</code>.</li>
+            <li><code>HotkeyDef</code> {id, action, scope: <code>global | focused</code>, default}: 11 global, 4 focused.</li>
+            <li><code>Suggestion</code> {text, label, kind: <code>question | phrase | word | next</code>}.</li>
+            <li><code>Download</code> (Rust, serde) {received, total}: the <code>speech-download</code> payload.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 -->
+    <section id="ipc">
+      <h2><span class="num">03</span>IPC contract</h2>
+      <p>Twelve commands from <code>tauri::generate_handler!</code>. Commands that block (capture, speech) run on <code>spawn_blocking</code> so the async runtime stays free. <code>open_snip_window</code> is async because creating a window from a sync command deadlocks on Windows.</p>
+      <div class="frame">
+        <table>
+          <thead><tr><th>Command</th><th>Arguments</th><th>Returns</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>set_click_through</code></td><td><code>window, enabled</code></td><td>()</td><td>Toggles <code>WS_EX_TRANSPARENT</code> on the HWND and <code>set_ignore_cursor_events</code> on the WebView2 child. Both are needed.</td></tr>
+            <tr><td><code>set_capture_visible</code></td><td><code>window, visible</code></td><td>()</td><td><code>SetWindowDisplayAffinity</code>: <code>WDA_NONE</code> or <code>WDA_EXCLUDEFROMCAPTURE</code> (0x11).</td></tr>
+            <tr><td><code>install_mouse_hook</code></td><td><code>window</code></td><td>()</td><td>Idempotent. Stores the HWND and AppHandle in statics, then starts a <code>WH_MOUSE_LL</code> thread.</td></tr>
+            <tr><td><code>uninstall_mouse_hook</code></td><td>—</td><td>()</td><td><code>UnhookWindowsHookEx</code>, then <code>WM_QUIT</code> to the hook thread.</td></tr>
+            <tr><td><code>install_keyboard_hook</code> / <code>uninstall_…</code></td><td>app handle</td><td>()</td><td><code>WH_KEYBOARD_LL</code>. Every Esc keydown emits <code>emergency-unlock</code>; the key is not swallowed.</td></tr>
+            <tr><td><code>set_unlock_zone</code></td><td><code>x, y, width, height</code></td><td>()</td><td>The lock button's bounds in physical px relative to the client area, kept in four <code>AtomicI32</code>s. Width 0 means no zone.</td></tr>
+            <tr><td><code>capture_screen</code></td><td><code>x, y, width, height</code></td><td>binary</td><td>Each side must be 1 to 16384. Format below.</td></tr>
+            <tr><td><code>open_snip_window</code></td><td>—</td><td>()</td><td>Does nothing if the window is already open. Covers the work area (not the whole monitor, which would dim the taskbar) of the monitor under the cursor; <code>focusable(false)</code>, excluded from capture, then <code>SW_SHOWNOACTIVATE</code>.</td></tr>
+            <tr><td><code>speech_load</code></td><td>—</td><td><code>String</code> device</td><td>Downloads the model if missing (emits <code>speech-download</code> on each new percent), loads it, runs a warm-up pass.</td></tr>
+            <tr><td><code>speech_transcribe</code></td><td>raw body + headers</td><td><code>String | null</code></td><td><code>null</code> means cancelled. Headers: <code>x-max-tokens</code> (default 220) and <code>x-final</code> (<code>"1"</code> for text that will be sent).</td></tr>
+            <tr><td><code>speech_cancel</code></td><td>—</td><td>()</td><td>Aborts every pass started so far. Later passes run normally.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Binary payloads</h3>
+      <p><code>speech_transcribe</code> request body (no JSON, so 30 s of audio is 1.9 MB of raw floats rather than a number array):</p>
+      <div class="frame" style="padding:12px">
+        <div class="bytes">
+          <div class="b-len"><span class="off">0..4</span>prompt length<br>u32 LE</div>
+          <div class="b-txt"><span class="off">4..4+n</span>prompt<br>UTF-8</div>
+          <div class="b-pcm"><span class="off">4+n..end</span>samples · f32 LE · 16 kHz mono · capped at 30 s in Rust</div>
+        </div>
+      </div>
+      <p><code>capture_screen</code> response (<code>tauri::ipc::Response</code>, arrives as an <code>ArrayBuffer</code>):</p>
+      <div class="frame" style="padding:12px">
+        <div class="bytes">
+          <div class="b-len"><span class="off">0..4</span>width<br>u32 LE</div>
+          <div class="b-len"><span class="off">4..8</span>height<br>u32 LE</div>
+          <div class="b-px"><span class="off">8..8+w·h·4</span>BGRA rows, top-down (biHeight = −h) · alpha comes back 0, the frontend sets it to 255</div>
+        </div>
+      </div>
+
+      <h3>Events</h3>
+      <div class="frame">
+        <table>
+          <thead><tr><th>Event</th><th>Emitted by</th><th>Payload</th><th>Handled by</th></tr></thead>
+          <tbody>
+            <tr><td><code>speech-download</code></td><td><code>speech_load</code> through <code>model::ensure</code></td><td><code>{received, total}</code> bytes</td><td><code>engine.ts</code> sets <code>ModelStatus</code> to downloading, or to loading at 100%</td></tr>
+            <tr><td><code>emergency-unlock</code></td><td>keyboard hook (Esc) · mouse hook (Ctrl+click in the unlock zone, swallowed with its button-up)</td><td>()</td><td><code>App</code> unlocks, unless <code>useMovePanel.escapeIsOurs()</code></td></tr>
+            <tr><td><code>locked-scroll</code></td><td>mouse hook: Ctrl+wheel over the visible panel (swallowed so the app behind doesn't zoom)</td><td>i16 wheel delta (120 a notch)</td><td><code>Conversation</code>: <code>scrollBy(−delta/120 × 60)</code></td></tr>
+            <tr><td><code>snip</code></td><td><code>SnipOverlay</code> → <code>emitTo('main')</code></td><td><code>{rect: ScreenRect | null}</code></td><td><code>useSnip</code>: releases keys, calls <code>captureRegion</code></td></tr>
+            <tr><td><code>snip-key</code></td><td><code>useSnip</code> → <code>emitTo('snip')</code></td><td><code>move {dx,dy,held}</code> · <code>edge</code> · <code>pick</code> · <code>all</code></td><td><code>SnipOverlay</code> moves the crosshair or clicks</td></tr>
+            <tr><td><code>snip-cancel</code></td><td><code>useSnip</code> on Esc</td><td>()</td><td><code>SnipOverlay.finish(null)</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout"><strong>Permissions.</strong> <code>capabilities/default.json</code> applies to the <code>main</code> and <code>snip</code> windows: core defaults; window close, start-dragging, hide, show, set-position, set-size, set-focus, center; the store defaults; clipboard write-text only; global-shortcut register, unregister and unregister-all; the updater defaults; process restart. CSP is off (<code>"csp": null</code>), so nothing restricts which endpoint the OpenAI SDK calls.</div>
+    </section>
+
+    <!-- 04 -->
+    <section id="flows">
+      <h2><span class="num">04</span>Runtime flows</h2>
+
+      <h3>4.1 Ask and stream an answer</h3>
+      <p>Every input path ends in <code>App.send → useChat.ask</code>: typed text, a follow-up click, a voice transcript, or a screenshot. Asking again while an answer is streaming aborts that answer and marks it <code>stopped</code>.</p>
+      <div class="frame diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant C as Composer
+  participant A as App
+  participant H as useChat
+  participant AI as lib/ai.ts
+  participant S as AI service
+  participant V as Conversation
+  U->>C: Enter (or follow-up click)
+  C->>A: sendDraft() decides typed or voice
+  A->>A: rememberQuestion(text) if typed
+  A->>H: ask(text, source, image)
+  H->>H: abort previous controller, new AbortController
+  H->>H: history = last 6 answered turns, old screenshots become a note
+  H->>H: append Turn(thinking), mark running turns stopped
+  alt endpoint, model or key missing
+    H-->>V: Turn failed with "Add the AI service in Settings"
+  else configured
+    H->>AI: streamAnswer(settings, history + userMessage, onText, signal)
+    AI->>AI: clientFor(settings), cached per endpoint and key
+    AI->>S: POST /responses, instructions + tone, max_output_tokens 6000, stream
+    loop each response.output_text.delta
+      S-->>AI: delta
+      AI-->>H: onText(text so far)
+      H-->>V: patch Turn(writing, answer)
+      V->>V: parseAnswer, then renderMarkdown (marked, DOMPurify)
+    end
+    S-->>AI: stream ends
+    AI-->>H: full text, trimmed
+    H-->>V: Turn(done)
+    A->>A: learn parsed.question and terms of glance + details
+  end
+  opt error, not aborted
+    AI-->>H: throws
+    H->>AI: describeError(error)
+    H-->>V: Turn(failed, readable message)
+  end
+</pre>
+      </div>
+
+      <h3>4.2 Voice on this PC, transcribed while you talk</h3>
+      <p>Whisper doesn't stream, so <code>LiveTranscript</code> re-transcribes the unsettled tail of the recording as it grows. A pass takes about a quarter of a second on a GPU. When the user stops, the last live pass has usually already heard everything.</p>
+      <div class="frame diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant K as useHotkeys or mic button
+  participant UV as useVoice
+  participant R as recorder
+  participant LT as LiveTranscript
+  participant E as engine.localPasses
+  participant RS as speech_transcribe
+  participant SP as speech.rs
+  U->>K: voice key Pressed
+  K->>UV: keyDown()
+  UV->>R: startRecording(micId, onLevel, onLimit)
+  R->>R: getUserMedia with echo cancel, noise suppress, AGC
+  R->>R: AudioContext 16 kHz, ScriptProcessor 2048 into a 120 s buffer
+  UV->>LT: new LiveTranscript(localPasses, prompt, setLiveText)
+  loop every 100 ms while listening
+    UV->>LT: update(recordedAudio()), a view with no copy
+    opt 0.3 s of new audio and no pass running
+      LT->>LT: settlePoint(): 12 s unsettled and a pause found?
+      LT->>LT: prepareSpeech: trim, normalize, split at 28 s
+      LT->>E: pass(chunk, prompt + last 40 settled words, maxTokens, final)
+      E->>RS: invoke with binary body and x-max-tokens, x-final headers
+      RS->>SP: transcribe(Pass) on a blocking thread
+      SP-->>RS: text, or None if cancelled
+      RS-->>E: text or null
+      E-->>LT: text
+      LT->>LT: cleanTranscript(text, prompt)
+      LT-->>UV: onText(settled + live), shown above the box
+    end
+  end
+  U->>K: Released after 450 ms or more, or a second tap
+  K->>UV: keyUp() then finish()
+  UV->>R: stopRecording(), mic released
+  UV->>LT: finish(audio)
+  opt a live pass is running
+    LT->>E: cancel()
+    E->>RS: speech_cancel
+  end
+  LT->>LT: did the latest pass hear past the last word? if not, one final pass on the rest
+  LT-->>UV: text
+  UV-->>U: autoSend: send as voice, otherwise put the text in the box
+</pre>
+      </div>
+      <p>With <strong>cloud transcription</strong> there is no live text. On stop, <code>transcribeCloudSpeech</code> runs the same <code>prepareSpeech</code>, joins the chunks, encodes a 16-bit WAV, calls <code>/audio/transcriptions</code> (language <code>en</code>, temperature 0, the same prompt), then <code>cleanTranscript</code>.</p>
+
+      <h3>4.3 Screenshot by two clicks</h3>
+      <div class="frame diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant US as useSnip
+  participant RS as Rust commands
+  participant SO as SnipOverlay window
+  participant GS as global-shortcut
+  participant CAP as capture.ts
+  U->>US: Ctrl+Alt+Shift+S
+  US->>RS: open_snip_window
+  RS->>RS: monitor under the cursor, its work area
+  RS->>SO: build the snip window, not focusable, hidden
+  RS->>RS: apply capture exclusion, ShowWindow SW_SHOWNOACTIVATE
+  US->>GS: takeKeys Esc, Enter, Ctrl+A, arrows, Shift+arrows
+  U->>SO: click a corner, then the opposite one (or arrows and Enter)
+  GS-->>US: key pressed
+  US-->>SO: emitTo snip-key
+  SO->>SO: snipStep() gives a Rect in CSS px
+  SO->>SO: times devicePixelRatio, plus window origin, gives physical ScreenRect
+  SO->>US: emitTo main, snip with rect
+  SO->>SO: close()
+  US->>GS: release the keys
+  US->>CAP: captureRegion(rect)
+  CAP->>RS: capture_screen(x, y, w, h)
+  RS->>RS: BitBlt of the desktop DC on a blocking thread
+  RS-->>CAP: ArrayBuffer with header and BGRA
+  CAP->>CAP: BGRA to RGBA, ImageBitmap, scale to 2000 px max, JPEG 0.9
+  CAP-->>US: data URL
+  US-->>U: autoSend: send as screen, otherwise attach to the draft
+</pre>
+      </div>
+
+      <h3>4.4 Lock, click-through and emergency unlock</h3>
+      <div class="frame diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant A as App
+  participant RS as Rust commands
+  participant MH as mouse hook thread
+  participant KH as keyboard hook thread
+  participant CV as Conversation
+  U->>A: toggleLock (shortcut or lock button)
+  A->>RS: set_click_through(true)
+  A->>RS: install_mouse_hook(window)
+  RS->>MH: SetWindowsHookExW WH_MOUSE_LL, then a GetMessageW loop
+  A->>RS: install_keyboard_hook
+  RS->>KH: SetWindowsHookExW WH_KEYBOARD_LL, then a GetMessageW loop
+  A->>A: setConfig locked true, close Settings
+  Note over U,CV: Clicks and the wheel reach the app behind
+  alt Esc anywhere
+    KH-->>A: emergency-unlock (Esc still reaches other apps)
+  else Ctrl+click inside the unlock zone
+    MH-->>A: emergency-unlock (click and its button-up swallowed)
+  else Ctrl+wheel over the panel
+    MH-->>CV: locked-scroll(delta), swallowed
+  end
+  A->>A: skip if escapeIsOurs(), i.e. moving or within 500 ms of it
+  A->>RS: set_click_through(false)
+  A->>RS: uninstall_mouse_hook, uninstall_keyboard_hook (WM_QUIT to threads)
+</pre>
+      </div>
+      <p><strong>Quick ask while locked.</strong> The ask shortcut unlocks, sets <code>quickAskRef</code> and focuses the box. When <code>onFocusChanged(false)</code> fires (the user clicked back into their app), the panel locks again. Esc typed into the focused, locked panel never reaches the low-level hook, so a window <code>keydown</code> listener handles that case.</p>
+
+      <h3>4.5 Speech model: first-run download and load</h3>
+      <div class="frame diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant UV as useVoice (preload)
+  participant E as engine.ts
+  participant RS as speech_load
+  participant M as model.rs
+  participant HF as Hugging Face
+  participant SP as speech.rs
+  UV->>E: loadSpeechModel(), one shared promise
+  E->>E: listen to speech-download, status loading
+  E->>RS: invoke speech_load
+  RS->>M: ensure(path, progress) on a blocking thread
+  alt model file exists
+    M-->>RS: Ok
+  else first run
+    loop up to 40 attempts, 3 s apart
+      M->>HF: GET with Range bytes=have- when a .partial exists
+      HF-->>M: 206 resume, or 200 full restart, or 416 already complete
+      M-->>E: speech-download received, total (each new percent)
+    end
+    M->>M: SHA-256 of .partial, rename to .bin, or delete and fail
+  end
+  RS->>SP: load(path)
+  SP->>SP: pick_gpu: dedicated GPU first, then integrated
+  SP->>SP: whisper init on the GPU, on failure retry on the CPU
+  SP->>SP: warm-up pass, 1 s of silence, max_tokens 1, compiles the Vulkan shaders
+  SP-->>E: device name
+  E->>E: status ready(device), or failed with the loading promise reset
+</pre>
+      </div>
+
+      <h3>4.6 Update check and install</h3>
+      <div class="frame diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant UU as useUpdater
+  participant UP as updater plugin
+  participant GH as GitHub Releases
+  participant P as process plugin
+  UU->>UP: check(), quiet, at start (production only) and every 6 h
+  UP->>GH: GET releases/latest/download/latest.json
+  GH-->>UP: version, notes, url, signature
+  UP-->>UU: Update or null
+  UU-->>U: title bar chip "Update to x.y.z"
+  U->>UU: click the chip
+  UU->>UP: downloadAndInstall()
+  UP->>GH: download the NSIS installer
+  UP->>UP: verify the minisign signature against the pubkey in tauri.conf.json
+  UP->>UP: run the installer in passive mode, which closes the app
+  UU->>P: relaunch()
+</pre>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section id="states">
+      <h2><span class="num">05</span>State machines</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Turn.state (useChat)</h3>
+          <div class="frame diagram" style="border:0;padding:0">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> thinking : ask()
+  thinking --> writing : first delta
+  writing --> writing : delta
+  writing --> done : stream ends
+  thinking --> failed : not configured or error
+  writing --> failed : error
+  thinking --> stopped : stop() or new ask()
+  writing --> stopped : stop() or new ask()
+  done --> [*]
+  stopped --> [*]
+  failed --> [*]
+</pre>
+          </div>
+          <p>Stopped and partly written turns still go into the history; failed ones don't.</p>
+        </div>
+        <div class="card">
+          <h3>VoicePhase (useVoice)</h3>
+          <div class="frame diagram" style="border:0;padding:0">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> idle
+  idle --> starting : keyDown or toggle
+  starting --> listening : mic open
+  starting --> idle : mic error
+  listening --> transcribing : finish()
+  transcribing --> idle : text, too short, or error
+</pre>
+          </div>
+          <ul>
+            <li><code>finish()</code> fires on keyUp after holding 450 ms or more, always with hold-to-talk, on a second tap, or when the 120 s buffer fills.</li>
+            <li>A stop that comes while <code>starting</code> sets <code>stopRequested</code>; it finishes as soon as the mic opens.</li>
+            <li>Under 0.3 s of audio: "Too short".</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>SnipState (lib/snip.ts)</h3>
+          <div class="frame diagram" style="border:0;padding:0">
+<pre class="mermaid">
+stateDiagram-v2
+  state "second, pressed" as pressed
+  state "second, released" as released
+  [*] --> first
+  first --> pressed : left down sets anchor
+  pressed --> done : left up 8 px or more away (drag)
+  pressed --> released : left up too close
+  released --> done : left down 8 px or more away
+  released --> pressed : left down too close, new anchor
+  first --> cancelled : right down or Esc
+  pressed --> cancelled : right down or Esc
+  released --> cancelled : right down or Esc
+  done --> [*]
+  cancelled --> [*]
+</pre>
+          </div>
+          <p>The arrow keys use the same machine: <code>snipClick</code> is a down then an up at the crosshair. Ctrl+A ends it with the whole window.</p>
+        </div>
+        <div class="card">
+          <h3>ModelStatus and UpdatePhase</h3>
+          <div class="frame diagram" style="border:0;padding:0">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> idle
+  idle --> loading : loadSpeechModel()
+  loading --> downloading : progress below 1
+  downloading --> loading : progress 1
+  loading --> ready : device name
+  loading --> failed : error
+  downloading --> failed : error
+  failed --> loading : retry
+</pre>
+          </div>
+          <p><code>UpdatePhase</code>: <code>idle → checking</code> (only when asked) <code>→ current | available | failed</code>; a quiet check goes straight from <code>idle</code> to <code>available</code>; then <code>available → installing →</code> relaunch, or <code>failed</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 -->
+    <section id="algorithms">
+      <h2><span class="num">06</span>Algorithms</h2>
+
+      <h3>6.1 The answer contract and its parser</h3>
+      <p>The system prompt in <code>ai.ts</code> asks for a fixed Markdown layout. <code>answer.ts</code> parses it on every streamed delta, so it has to handle a reply cut off at any character.</p>
+      <div class="formula">Q: &lt;the question as understood, one line&gt;
+
+**&lt;direct answer, ≤ 25 words&gt;**
+- **&lt;term&gt;**: &lt;point, &lt; 15 words&gt;          (3–5 bullets)      ← glance
+
+## Details                                       ← details (80–250 words)
+## Follow-ups
+- **&lt;likely next question&gt;** &lt;1–2 sentence answer&gt;   (2–3)  ← followUps</div>
+      <div class="frame">
+        <table>
+          <thead><tr><th>Rule</th><th>Pattern</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>Q line</td><td class="wrap"><code>^\s*(?:\*\*)?Q:(?:\*\*)?\s*([^\n]*)(\n|$)</code></td><td>Takes the question off the top. A body that is only <code>Q</code> or <code>Q:</code> so far is treated as empty.</td></tr>
+            <tr><td>Section heading</td><td class="wrap"><code>^#{1,4}\s*\**\s*(details|follow[- ]?ups?)\s*\**\s*:?\s*$</code> (gim)</td><td>Splits into sections. Repeated sections are concatenated.</td></tr>
+            <tr><td>Partial heading</td><td class="wrap"><code>\n#{1,4}[^\n]*$</code></td><td>Drops a heading that is still arriving (<code>## Det</code>) so it never flashes on screen.</td></tr>
+            <tr><td>Follow-up item</td><td class="wrap"><code>^\s*(?:[-*]|\d+\.)\s+\*\*(.+?)\*\*\s*[:\-–—]?\s*(.*)$</code></td><td>Bold text is the question (clicking it asks it), the rest is the answer. Lines that don't match continue the previous answer.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The tone setting only adds a wording rule after the instructions and says to keep the format exactly. History is the last 6 turns, and screenshots aren't sent again (<code>"[screenshot sent earlier]"</code>), which keeps follow-up requests small.</p>
+
+      <h3>6.2 Live transcription (<code>speech/live.ts</code>)</h3>
+      <div class="grid-2">
+        <div class="frame">
+          <table>
+            <thead><tr><th>Constant</th><th>Value</th><th>Role</th></tr></thead>
+            <tbody>
+              <tr><td><code>STEP_SECONDS</code></td><td class="num-col">0.3 s</td><td>New audio needed before the next live pass</td></tr>
+              <tr><td><code>SETTLE_AFTER_SECONDS</code></td><td class="num-col">12 s</td><td>Unsettled audio longer than this gets settled</td></tr>
+              <tr><td><code>SETTLE_GAP_SECONDS</code></td><td class="num-col">1.5 s</td><td>A pause must be at least this far from the end</td></tr>
+              <tr><td><code>MIN_SETTLED_SECONDS</code></td><td class="num-col">3 s</td><td>…and at least this far from the start</td></tr>
+              <tr><td><code>HEARD_AFTER_SECONDS</code></td><td class="num-col">0.3 s</td><td>The last pass counts as final if it ran this long past the last word</td></tr>
+              <tr><td><code>CARRY_WORDS</code></td><td class="num-col">40</td><td>Settled words carried into the next pass's prompt</td></tr>
+              <tr><td><code>MAX_CHUNK_SECONDS</code></td><td class="num-col">28 s</td><td>Hard cut at the quietest frame if there's no pause</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Invariants</h3>
+          <ul>
+            <li>At most one pass in flight (<code>running</code>). Only live passes can be cancelled; settling passes always finish.</li>
+            <li><code>text() = settled.join(' ') + heard.text</code>. Settled text never changes; the live tail is replaced on every pass.</li>
+            <li>A final pass on stop is needed only if <code>heard.end &lt; settledEnd + speech.end − PAD + HEARD_AFTER</code>.</li>
+            <li>No speech after the last settle point means no final pass at all.</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>6.3 Audio conditioning (<code>speech/audio.ts</code>)</h3>
+      <div class="formula">frames      = RMS of 20 ms (320 samples)
+floor, loud = p10, p95 of frame levels
+no speech   if loud &lt; 0.004 (≈ −48 dBFS) or loud &lt; 3·floor
+threshold   = max(2.5·floor, floor + 0.12·(loud − floor), 0.002)
+trim        = first..last voiced frame ± 0.25 s pad; voiced ≥ 0.15 s required
+normalize   = gain min(30, 0.9 / p99.9(|x|)), clipped to [−1, 1]
+split       = audio over 28 s is cut at the quietest frame in the 6 s before the limit
+pause       = ≥ 0.3 s below threshold with speech on both sides (findPause scans backwards)</div>
+
+      <h3>6.4 Whisper decoding (<code>speech.rs</code>) and transcript clean-up</h3>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Decode parameters</h3>
+          <ul>
+            <li>Greedy sampling, <code>language = "en"</code>, <code>single_segment</code>, <code>no_timestamps</code>, <code>no_context</code> (the prompt carries the context).</li>
+            <li><code>temperature 0</code>; <code>temperature_inc 0.2</code> only on final passes, so only text that gets sent is retried when garbled.</li>
+            <li><code>suppress_blank</code>, <code>suppress_nst</code> (no "[music]").</li>
+            <li><code>n_threads = clamp(cores, 2, 8)</code>; <code>max_tokens = min(220, ⌈6·seconds⌉ + 24)</code>.</li>
+            <li>whisper.cpp logs below WARN are dropped.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Prompt and clean-up (<code>transcript.ts</code>)</h3>
+          <ul>
+            <li>Prompt = the vocabulary list as a sentence, then the last question, ending with a full stop. At most 600 characters, cut at a word break so the vocabulary is kept.</li>
+            <li>Bracketed tags, music notes and leading subtitle dashes are removed.</li>
+            <li>Any 1–12 word phrase repeated 3 or more times in a row is collapsed to one copy.</li>
+            <li>A transcript that is only a "silence phrase" ("thank you", "thanks for watching"…) becomes empty.</li>
+            <li>A transcript over 12 characters that appears inside the prompt is an echo and is discarded.</li>
+          </ul>
+        </div>
+      </div>
+      <h3>6.5 Cancelling passes without a channel</h3>
+      <p>Each <code>transcribe</code> takes a number from <code>next_pass.fetch_add(1)</code>. <code>cancel()</code> sets <code>cancelled_through = max(it, next_pass − 1)</code>. A pass checks <code>number ≤ cancelled_through</code> three times: before it starts, through whisper's <code>abort_callback</code> while decoding, and after decoding. A pass waiting on the mutex therefore gives up as soon as it gets the lock, and passes started after the cancel are not affected.</p>
+
+      <h3>6.6 Autocomplete scoring (<code>autocomplete.ts</code>)</h3>
+      <div class="frame">
+        <table>
+          <thead><tr><th>Order</th><th>Kind</th><th>When</th><th>Score / rule</th></tr></thead>
+          <tbody>
+            <tr><td class="num-col">1</td><td><code>question</code></td><td>Input ≥ 3 characters</td><td>Up to 2 earlier questions with this prefix, most recent first</td></tr>
+            <tr><td class="num-col">2</td><td><code>phrase</code></td><td>≥ 2 characters, not ending in a space</td><td>First matching seed opening ("what's the diff" → "what's the difference between")</td></tr>
+            <tr><td class="num-col">3a</td><td><code>word</code></td><td>Partial word ≥ 2 characters</td><td>Vocabulary 40 · typed words 6·log₂(1+n) · conversation terms 4·log₂(1+n) · seed list 3·rank. The highest-priority source decides the spelling ("grp" → "gRPC").</td></tr>
+            <tr><td class="num-col">3b</td><td><code>next</code></td><td>Input ends in a space</td><td>Times typed after the last word × 2, plus seed phrases × 3; shown only at score ≥ 3, top 3</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Learning: <code>learnQuestion</code> keeps up to 300 questions, counts words and word-to-next-word pairs, and lowercases common words that were capitalized only because they started the sentence. <code>learnTerms</code> adds up to 60 terms per answer at weight 0.5 (words of 7+ letters, or mixed case like "Kubernetes"). The word table is pruned to the 5000 most frequent.</p>
+
+      <h3>6.7 Reading-pace auto-scroll and keyboard control</h3>
+      <div class="grid-2">
+        <div class="card">
+          <h3><code>useAutoScroll</code></h3>
+          <ul>
+            <li>A new turn is scrolled to the top at once (<code>scrollIntoView</code>, instant).</li>
+            <li>Pace: slow 0.6, medium 1, fast 1.6 lines a second; a line is <code>font-size × 1.5</code>.</li>
+            <li>Starts after reading 5 lines takes at that pace; keeps waiting while the answer is still being written.</li>
+            <li>The user takes over on wheel, pointerdown or keydown, or when <code>scrollTop</code> moves more than 4 px from where the hook put it.</li>
+            <li>Frame time is capped at 100 ms so a hidden panel doesn't jump when shown again.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Shortcuts</h3>
+          <ul>
+            <li>Accelerators are stored as <code>Ctrl+Alt+Shift+&lt;KeyboardEvent.code&gt;</code>. Global ones default to Ctrl+Alt+Shift because Teams and Zoom leave that combination free.</li>
+            <li>Registrations go through a serial promise queue and start with <code>unregisterAll()</code>, so keys are never left bound to a dead page after a reload.</li>
+            <li>Only the voice key uses both Pressed and Released.</li>
+            <li><code>takeKeys</code> adds key repeat in software (300 ms delay, then every 30 ms), because Windows hotkeys don't repeat.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 07 -->
+    <section id="threads">
+      <h2><span class="num">07</span>Concurrency and threads</h2>
+      <div class="frame">
+        <table>
+          <thead><tr><th>Thread or context</th><th>Runs</th><th>Synchronization</th></tr></thead>
+          <tbody>
+            <tr><td>WebView2 UI thread (panel)</td><td>React, hooks, the audio callback (ScriptProcessor), JPEG encoding</td><td>Refs mirror state for long-lived callbacks (<code>turnsRef</code>, <code>phaseRef</code>, <code>latest</code>). Serial queues for config saves and hotkey registration. <code>inFlight</code> flag for window moves.</td></tr>
+            <tr><td>WebView2 UI thread (snip window)</td><td>SnipOverlay</td><td>Talks to the panel only through events; <code>doneRef</code> makes <code>finish</code> run once.</td></tr>
+            <tr><td>Rust main thread</td><td>Event loop, window creation, <code>SetWindowSubclass</code> (must run on the thread that owns the window)</td><td>—</td></tr>
+            <tr><td>Tauri async runtime</td><td>Async commands (<code>speech_*</code>, <code>capture_screen</code>, <code>open_snip_window</code>)</td><td>Blocking work goes to <code>spawn_blocking</code>.</td></tr>
+            <tr><td>Blocking pool</td><td>Model download and load, Whisper passes, BitBlt</td><td><code>Mutex&lt;Option&lt;Model&gt;&gt;</code> allows one pass at a time; atomics handle cancellation.</td></tr>
+            <tr><td>Mouse-hook thread</td><td><code>WH_MOUSE_LL</code> callback inside a <code>GetMessageW</code> loop</td><td><code>INSTALL_LOCK</code> mutex. HWND, hook handle, thread id and unlock zone in atomics. <code>SWALLOW_UP</code> pairs the swallowed down with its up.</td></tr>
+            <tr><td>Keyboard-hook thread</td><td><code>WH_KEYBOARD_LL</code> callback inside a <code>GetMessageW</code> loop</td><td>Same pattern. Stopped with <code>PostThreadMessageW(WM_QUIT)</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout"><strong>Why the serial queues.</strong> Each store save writes the whole file, so an older save finishing last would undo a newer one. Hotkey effects re-run while a previous registration pass may still be running; if passes overlap, keys end up bound to a handler that is no longer listening.</div>
+    </section>
+
+    <!-- 08 -->
+    <section id="storage">
+      <h2><span class="num">08</span>Persistence</h2>
+      <div class="frame">
+        <table>
+          <thead><tr><th>Data</th><th>Where</th><th>Written</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Settings (<code>Config</code>)</td><td><code>%APPDATA%\com.toyol.app\config.json</code></td><td>On every <code>setConfig</code>, serialized</td><td>One store key per Config field. Loading merges over <code>DEFAULT_CONFIG</code>, so new fields get defaults. Includes the API key in plain text.</td></tr>
+            <tr><td>Autocomplete <code>Memory</code></td><td><code>…\autocomplete.json</code>, key <code>memory</code></td><td>1.5 s after the last change</td><td>A separate file because it changes with every question.</td></tr>
+            <tr><td>Window geometry</td><td>In <code>config.json</code></td><td>400 ms after a move or resize</td><td>Position in physical px, size in logical px. Restored only if the point (x+40, y+10) is on a connected monitor.</td></tr>
+            <tr><td>Speech model</td><td><code>%LOCALAPPDATA%\com.toyol.app\models\ggml-medium.en-q8_0.bin</code></td><td>Once, on first use</td><td>Debug builds use <code>src-tauri/resources/models</code> when present. Only a verified download gets the final name.</td></tr>
+            <tr><td>Conversation</td><td>Memory only</td><td>—</td><td>Gone on quit or New conversation. Answers aren't stored anywhere.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 09 -->
+    <section id="errors">
+      <h2><span class="num">09</span>Failure handling</h2>
+      <div class="frame">
+        <table>
+          <thead><tr><th>Failure</th><th>Detection</th><th>What the user sees or the app does</th></tr></thead>
+          <tbody>
+            <tr><td>Bad request mentioning images</td><td><code>BadRequestError</code> with /image/</td><td>"This model can't read screenshots…"</td></tr>
+            <tr><td>Key rejected</td><td><code>AuthenticationError</code>, <code>PermissionDeniedError</code></td><td>"The API key was rejected. Check it in Settings."</td></tr>
+            <tr><td>Wrong model or deployment</td><td><code>NotFoundError</code></td><td>"No such model or deployment…" (for transcription: deploy one, or switch to On this PC)</td></tr>
+            <tr><td>Rate limit or offline</td><td><code>RateLimitError</code>, <code>APIConnectionError</code></td><td>"busy, try again" / "Can't reach the AI service". The SDK retries once (<code>maxRetries: 1</code>).</td></tr>
+            <tr><td>Stream error event</td><td><code>error</code> or <code>response.failed</code></td><td>The service's own message on the turn.</td></tr>
+            <tr><td>Download dropped</td><td>Read error or short body</td><td>Resumes up to 40 times, 3 s apart. A checksum mismatch deletes the partial file and reports it.</td></tr>
+            <tr><td>GPU init fails</td><td>Null context from whisper</td><td>Logs a warning and loads on the CPU.</td></tr>
+            <tr><td>Microphone blocked</td><td><code>getUserMedia</code> rejects</td><td>A note pointing to Windows privacy settings or another mic.</td></tr>
+            <tr><td>Shortcut taken by another app</td><td><code>register</code> throws</td><td>That binding is skipped and logged; the rest still work.</td></tr>
+            <tr><td>Lock state out of sync</td><td>—</td><td><code>emergencyUnlock</code> always unlocks without checking state, so there is always a way back.</td></tr>
+            <tr><td>Snip or capture fails</td><td><code>invoke</code> rejects</td><td>"Couldn't start / take the screenshot".</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="security">
+      <h2><span class="num">10</span>Security and privacy</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>What leaves the PC</h3>
+          <ul>
+            <li>Questions, the last 6 turns, and screenshots the user takes: only to the configured AI endpoint.</li>
+            <li>Voice recordings only with cloud transcription. Local Whisper keeps audio on the machine.</li>
+            <li>Update checks to GitHub and the one-time model download from Hugging Face.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Controls in the code</h3>
+          <ul>
+            <li>Model output is rendered with <code>marked</code>, then sanitized by <code>DOMPurify</code>. Links carry no <code>href</code>, so they can't navigate the panel.</li>
+            <li>Updates must be signed with the minisign key whose public half is in <code>tauri.conf.json</code>.</li>
+            <li>The model is pinned to a revision and checked by SHA-256 (<code>43fa2cd0…f11c</code>).</li>
+            <li>The panel and snip window are hidden from screen capture by default.</li>
+            <li>The microphone is granted without a prompt but is open only while listening.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout"><strong>Known trade-offs.</strong> The API key is stored in plain text in <code>config.json</code>, and the OpenAI SDK runs in the WebView with <code>dangerouslyAllowBrowser</code>. The app is local and single-user, so the key stays with its owner, but anything that can read the user's AppData can read it. Windows Credential Manager would be the next step. With CSP off, the sanitizer is the main defence if model output ever contains markup.</div>
+    </section>
+
+    <!-- 11 -->
+    <section id="testing">
+      <h2><span class="num">11</span>Testing</h2>
+      <div class="frame">
+        <table>
+          <thead><tr><th>Suite</th><th>Covers</th></tr></thead>
+          <tbody>
+            <tr><td><code>lib/answer.test.ts</code></td><td>A full reply split into parts, a partial Q line, the question while it streams in, hiding a heading still arriving, bold Q labels and other heading levels, a reply without the format</td></tr>
+            <tr><td><code>lib/autocomplete.test.ts</code></td><td>Question openings, keeping the typed capital, vocabulary spelling, earlier questions, next word only after two sightings, conversation terms, nothing for an empty box or one letter, learning questions and terms</td></tr>
+            <tr><td><code>lib/snip.test.ts</code></td><td>Two clicks from either corner, a drag, a small wobble, restarting on the same spot, right-click cancel at either step, minimum size, keyboard corners</td></tr>
+            <tr><td><code>lib/speech/speech.test.ts</code></td><td>Trimming with padding, silence, short clicks, normalizing quiet speech, splitting, the WAV header, vocabulary parsing, the prompt, silence phrases, prompt echoes, loops, token caps</td></tr>
+            <tr><td><code>lib/speech/live.test.ts</code></td><td>Finding pauses, and <code>LiveTranscript</code> with fake passes: live text, no wait when the last pass heard everything, one more pass when speech went on, settling long speech, cancelling on stop, nothing said</td></tr>
+            <tr><td><code>scripts/bench-speech.mjs</code></td><td>End-to-end word error rate, jargon accuracy and wait after stop, on TTS clips degraded like a laptop mic and played in real time through the app's engine</td></tr>
+            <tr><td><code>scripts/try-answers.mjs</code></td><td>Sends a real question to the configured service and shows how the answer splits up</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>Derived from the toyol source at commit 269b42d (v0.1.0). File and symbol names match the repository. Diagrams for system context and release live in <code>docs/architecture/toyol-hld.drawio</code>.</footer>
+  </main>
+</div>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+
+</body></html>
