@@ -179,6 +179,30 @@ the installer and the `latest.json` the app checks. It needs the
 **Back up the key**: installed copies accept only updates signed with it, so without it they can't
 be updated again.
 
+## Licenses
+
+toyol works on a PC once it has a license key made for that PC; nothing goes online. Until
+then, instead of the panel it shows **Activate toyol** with the PC's code (like
+`866N-P7JH-21FG-12EY`, a hash of Windows' MachineGuid, so the raw ID never leaves the PC). The
+customer sends you the code, you sign a key for it, and they paste the key in:
+
+```bash
+npm run license -- sign 866N-P7JH-21FG-12EY "Customer name"
+npm run license -- sign 866N-P7JH-21FG-12EY "Customer name" --expires 2027-12-31   # ends then
+npm run license -- show <key>   # what a key says, and whether you signed it
+```
+
+`sign` catches a mistyped code (the last character checks the others) and lists every key in
+`~/.tauri/toyol-license-keys.csv`. A key copied to another PC doesn't work there, nor does one
+changed by a single character. Reinstalling Windows gives the PC a new code, so it needs a new
+key. Updates keep the key.
+
+Keys are signed with the Ed25519 key `~/.tauri/toyol-license.pem` (or the file
+`TOYOL_LICENSE_KEY` names), whose public half is `PUBLIC_KEY` in
+[license.rs](src-tauri/src/license.rs). **Back it up, and never share it**: anyone with it can
+make keys, and with a new one the keys already sent stop working. `npm run license -- key`
+makes one if there isn't one, and prints the public half.
+
 ## Credits
 
 The Windows overlay plumbing (capture exclusion, click-through lock with its Esc and Ctrl+click

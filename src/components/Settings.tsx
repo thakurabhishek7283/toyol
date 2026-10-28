@@ -5,6 +5,7 @@ import type { Tone } from '../lib/ai';
 import { checkBinding, comboFromEvent, displayAccelerator, HOTKEY_DEFS, resolveHotkeys, type HotkeyId } from '../lib/hotkeys';
 import { listMicrophones } from '../lib/speech/recorder';
 import type { ModelStatus } from '../lib/speech/engine';
+import type { LicenseStatus } from '../hooks/useLicense';
 import type { useUpdater } from '../hooks/useUpdater';
 import { Icon } from './Icon';
 
@@ -25,12 +26,13 @@ interface SettingsProps {
   setConfig: (updates: Partial<Config>) => void;
   modelStatus: ModelStatus;
   updater: ReturnType<typeof useUpdater>;
+  license: LicenseStatus | null;
   onRecordingShortcut: (recording: boolean) => void;
   onClose: () => void;
 }
 
 /** Settings, applied as they change */
-function Settings({ config, setConfig, modelStatus, updater, onRecordingShortcut, onClose }: SettingsProps) {
+function Settings({ config, setConfig, modelStatus, updater, license, onRecordingShortcut, onClose }: SettingsProps) {
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [showKey, setShowKey] = useState(false);
   const [version, setVersion] = useState('');
@@ -171,6 +173,16 @@ function Settings({ config, setConfig, modelStatus, updater, onRecordingShortcut
 
         <Section title="Shortcuts" note="Pick one (click it, or Enter), then press the new keys; Esc keeps the old ones. The Ctrl+Alt+Shift ones work anywhere, even locked.">
           <ShortcutList config={config} setConfig={setConfig} onRecording={onRecordingShortcut} />
+        </Section>
+
+        <Section title="License" note="The license key is for this PC only. For another PC, or after reinstalling Windows, send that PC's code for a new key.">
+          <div className="field-inline about">
+            <span className="field-label">Licensed to {license?.name}</span>
+            <span className="hint">
+              {license?.expires ? `until ${new Date(license.expires * 1000).toLocaleDateString()}` : 'no end date'}
+            </span>
+          </div>
+          <p className="hint">This PC's code: {license?.machineCode}</p>
         </Section>
 
         <Section title="About" note="Updates come from the toyol releases on GitHub. A new one shows in the title bar; it installs only when you click it.">

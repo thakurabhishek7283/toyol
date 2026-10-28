@@ -6,6 +6,7 @@ import { DEFAULT_CONFIG, MAX_FONT_SIZE, MIN_FONT_SIZE, OPACITY_STEPS } from './c
 import { useConfig } from './hooks/useConfig';
 import { useChat } from './hooks/useChat';
 import { useHotkeys } from './hooks/useHotkeys';
+import { useLicense } from './hooks/useLicense';
 import { useMemory } from './hooks/useMemory';
 import { isOnAnyMonitor, useMovePanel } from './hooks/useMovePanel';
 import { useSnip } from './hooks/useSnip';
@@ -17,6 +18,7 @@ import { displayAccelerator, resolveHotkeys, type Hotkeys } from './lib/hotkeys'
 import { getModelStatus, subscribeModelStatus } from './lib/speech/engine';
 import { buildPrompt, parseVocabulary } from './lib/speech/transcript';
 import type { InputSource } from './lib/ai';
+import Activation from './components/Activation';
 import TitleBar from './components/TitleBar';
 import Conversation from './components/Conversation';
 import Composer from './components/Composer';
@@ -42,6 +44,7 @@ function App() {
   const { turns, busy, ask, stop, reset } = useChat(ai);
   const modelStatus = useSyncExternalStore(subscribeModelStatus, getModelStatus);
   const updater = useUpdater();
+  const license = useLicense();
 
   const [locked, setLocked] = useState(false);
   const [visible, setVisible] = useState(true);
@@ -165,7 +168,7 @@ function App() {
   // Restore size, position and lock once, then show. Position is physical px
   // (unambiguous across monitors), size logical (same look at any scaling).
   useEffect(() => {
-    if (loading || restoredRef.current) return;
+    if (loading || !license.status || restoredRef.current) return;
     restoredRef.current = true;
     (async () => {
       try {
@@ -191,9 +194,10 @@ function App() {
       } catch (error) {
         console.error('Failed to show the window:', error);
       }
-      if (config.locked) await applyLock(true).catch((e: unknown) => console.error('Failed to restore the lock:', e));
+      // Not before activating: Activation needs clicks
+      if (config.locked && license.licensed) await applyLock(true).catch((e: unknown) => console.error('Failed to restore the lock:', e));
     })();
-  }, [loading, config, applyLock]);
+  }, [loading, config, applyLock, license.status, license.licensed]);
 
   // Save position and size after a move or resize
   useEffect(() => {
@@ -284,7 +288,7 @@ function App() {
     }),
     micId: config.micId,
     holdToTalk: config.holdToTalk,
-    preload: !loading && config.speechEngine === 'local',
+    preload: !loading && license.licensed && config.speechEngine === 'local',
     onText: (text) => {
       reveal().catch(() => {});
       const combined = draft.trim() ? `${draft.trim()} ${text}` : text;
@@ -350,7 +354,7 @@ function App() {
     fontUp: () => setFontSize(config.fontSize + 1),
     fontDown: () => setFontSize(config.fontSize - 1),
     fontReset: () => setFontSize(DEFAULT_CONFIG.fontSize),
-  }, hotkeys, recordingShortcut);
+  }, hotkeys, recordingShortcut || !license.licensed);
 
   // Settings closed: back to the question box
   const settingsWasOpen = useRef(false);
@@ -377,7 +381,7 @@ function App() {
     conversation: conversationTerms(turns.map((t) => t.answer)),
   }), [memory, vocabulary, turns]);
 
-  if (loading) return null;
+  if (loading || !license.status) return null;
 
   const configured = Boolean(config.aiEndpoint && config.aiModel && config.aiApiKey);
   const style = {
@@ -386,6 +390,14 @@ function App() {
     '--fs': `${config.fontSize}px`,
     '--opacity': config.opacity,
   } as CSSProperties;
+
+  if (!license.licensed) {
+    return (
+      <div className="app" style={style}>
+        <Activation license={license} onQuit={quit} />
+      </div>
+    );
+  }
 
   // The first time, the speech model downloads (in the background from startup)
   const downloaded = Math.floor((modelStatus.progress ?? 0) * 100);
@@ -441,6 +453,7 @@ function App() {
           setConfig={setConfig}
           modelStatus={modelStatus}
           updater={updater}
+          license={license.status}
           onRecordingShortcut={setRecordingShortcut}
           onClose={() => setShowSettings(false)}
         />
