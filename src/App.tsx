@@ -38,8 +38,11 @@ function App() {
   const { memory, rememberQuestion, rememberTerms } = useMemory();
   const hotkeys = useMemo(() => resolveHotkeys(config.hotkeys), [config.hotkeys]);
   const ai = useMemo(
-    () => ({ endpoint: config.aiEndpoint, model: config.aiModel, apiKey: config.aiApiKey, tone: config.tone, customTone: config.customTone }),
-    [config.aiEndpoint, config.aiModel, config.aiApiKey, config.tone, config.customTone],
+    () => ({
+      endpoint: config.aiEndpoint, model: config.aiModel, apiKey: config.aiApiKey,
+      mode: config.answerMode, background: config.background, tone: config.tone, customTone: config.customTone,
+    }),
+    [config.aiEndpoint, config.aiModel, config.aiApiKey, config.answerMode, config.background, config.tone, config.customTone],
   );
   const { turns, busy, ask, stop, reset } = useChat(ai);
   const modelStatus = useSyncExternalStore(subscribeModelStatus, getModelStatus);
@@ -419,6 +422,9 @@ function App() {
 
   const titleStatus = locked ? <span className="chip warn">Locked</span> : (
     <>
+      {config.answerMode === 'interview' && (
+        <span className="chip" title="Answering as the candidate in a mock interview (Settings › Answers)">Interview</span>
+      )}
       {modelStatus.state === 'downloading' && (
         <span className="chip" title="The speech model for voice on this PC, downloaded once">Speech model {downloaded}%</span>
       )}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { MAX_FONT_SIZE, MIN_FONT_SIZE, PANEL_COLORS, readableTextOn, TEXT_COLORS, type AutoScroll, type Config } from '../config';
-import type { Tone } from '../lib/ai';
+import type { AnswerMode, Tone } from '../lib/ai';
 import { checkBinding, comboFromEvent, displayAccelerator, HOTKEY_DEFS, resolveHotkeys, type HotkeyId } from '../lib/hotkeys';
 import { listMicrophones } from '../lib/speech/recorder';
 import type { ModelStatus } from '../lib/speech/engine';
@@ -10,6 +10,12 @@ import type { useUpdater } from '../hooks/useUpdater';
 import { Icon } from './Icon';
 
 const AUTO_SCROLL_OPTIONS: [AutoScroll, string][] = [['off', 'Off'], ['slow', 'Slow'], ['medium', 'Medium'], ['fast', 'Fast']];
+
+// Who answers, and what that's like
+const ANSWER_MODE_OPTIONS: [AnswerMode, string, string][] = [
+  ['assistant', 'Assistant', 'Explains the answer to you.'],
+  ['interview', 'Candidate', 'Mock interview: answers your question as the candidate would, quick for simple questions and as a case-study walk-through for open ones.'],
+];
 
 // Each tone, and what it sounds like
 const TONE_OPTIONS: [Tone, string, string][] = [
@@ -91,7 +97,26 @@ function Settings({ config, setConfig, modelStatus, updater, license, onRecordin
           </Field>
         </Section>
 
-        <Section title="Answers" note="How the answers are worded. The layout stays the same; it applies from the next question.">
+        <Section title="Answers" note="Who answers, and how it's worded. The layout stays the same; it applies from the next question.">
+          <Field label="Answer as">
+            <div className="segmented">
+              {ANSWER_MODE_OPTIONS.map(([value, label]) => (
+                <button key={value} className={config.answerMode === value ? 'on' : ''} aria-pressed={config.answerMode === value} onClick={() => setConfig({ answerMode: value })}>{label}</button>
+              ))}
+            </div>
+            <p className="hint">{ANSWER_MODE_OPTIONS.find(([value]) => value === config.answerMode)?.[2]}</p>
+          </Field>
+          {config.answerMode === 'interview' && (
+            <Field label="Your background">
+              <textarea
+                rows={4}
+                value={config.background}
+                placeholder="e.g. 4 years backend at a fintech: Java, Spring Boot, Kafka, PostgreSQL. Built the payment reconciliation service; cut nightly batch time from 3 h to 40 min. Interviewing for senior backend roles."
+                onChange={(e) => setConfig({ background: e.target.value })}
+              />
+              <p className="hint">The only experience answers may claim as yours. Left empty, they speak from practice and use [placeholders] for your own stories, rather than making any up.</p>
+            </Field>
+          )}
           <Field label="Tone">
             <select value={config.tone} onChange={(e) => setConfig({ tone: e.target.value as Tone })}>
               {TONE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}

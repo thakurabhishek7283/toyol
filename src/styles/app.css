@@ -211,6 +211,23 @@ kbd {
   font-weight: 600;
   line-height: 1.4;
 }
+/* How deep an interview answer goes (lib/answer: Depth) */
+.depth {
+  flex-shrink: 0;
+  margin: 0.15em 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: var(--tint-2);
+  color: var(--fg-2);
+}
+.depth.deep {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
 
 /* What was typed or heard, when it differs from the question as understood */
 .turn-input {

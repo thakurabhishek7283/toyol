@@ -98,6 +98,14 @@ function TurnView({ turn, expanded, onToggle, onAsk }: TurnViewProps) {
       <header className="turn-question">
         <span className="q-mark" aria-hidden="true">Q</span>
         <h2>{parsed.question || turn.input || 'What’s on this screenshot?'}</h2>
+        {parsed.depth && (
+          <span
+            className={`depth ${parsed.depth}`}
+            title={parsed.depth === 'deep' ? 'An open question: explored like a case study' : 'A simple question: answered directly'}
+          >
+            {parsed.depth === 'deep' ? 'Deep dive' : 'Quick'}
+          </span>
+        )}
       </header>
       {(heard || turn.image) && (
         <div className="turn-input">
@@ -149,6 +157,6 @@ const plain = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const sameText = (a: string, b: string) => plain(a) === plain(b);
 
 // The answer without the Q line, for pasting elsewhere
-const stripFormat = (answer: string) => answer.replace(/^\s*(?:\*\*)?Q:[^\n]*\n+/, '').trim();
+const stripFormat = (answer: string) => answer.replace(/^\s*(?:\*\*)?Q(?:\s*\((?:quick|deep)\))?:[^\n]*\n+/i, '').trim();
 
 export default Conversation;
