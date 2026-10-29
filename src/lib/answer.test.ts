@@ -50,6 +50,19 @@ describe('parseAnswer', () => {
     expect(parsed.details).toBe('More.');
   });
 
+  it('reads the depth from an interview-mode Q line', () => {
+    const deep = parseAnswer('Q (deep): How would you design a rate limiter?\n\n**Token buckets in Redis.**');
+    expect(deep).toMatchObject({ question: 'How would you design a rate limiter?', depth: 'deep', glance: '**Token buckets in Redis.**' });
+    expect(parseAnswer('**Q (quick):** What is DNS?').depth).toBe('quick');
+    expect(parseAnswer(FULL).depth).toBeUndefined();
+  });
+
+  it('shows nothing while the depth is still arriving', () => {
+    for (const partial of ['Q (', 'Q (de', 'Q (deep)', 'Q (deep):']) {
+      expect(parseAnswer(partial)).toMatchObject({ question: '', glance: '' });
+    }
+  });
+
   it('treats a reply without the format as the answer', () => {
     expect(parseAnswer('Just some text.')).toMatchObject({ question: '', glance: 'Just some text.' });
   });

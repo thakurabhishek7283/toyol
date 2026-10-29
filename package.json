@@ -12,6 +12,7 @@
     "tauri:dev": "npm run fetch-models && tauri dev",
     "tauri:build": "tauri build",
     "release": "node scripts/release.mjs",
+    "license": "node scripts/license.mjs",
     "test": "vitest run",
     "bench:speech": "node scripts/bench-speech.mjs"
   },

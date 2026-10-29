@@ -3,6 +3,8 @@
 // instructions in src/lib/ai.ts.
 //
 //   node scripts/try-answers.mjs ["your own question"]
+//
+// MODE=interview answers as the candidate (BACKGROUND="..." for their experience).
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -17,7 +19,13 @@ const env = Object.fromEntries(
     return [l.slice(0, at), l.slice(at + 1).trim()];
   }),
 );
-const settings = { endpoint: env.VITE_AI_ENDPOINT, model: env.VITE_AI_MODEL, apiKey: env.VITE_AI_API_KEY };
+const settings = {
+  endpoint: env.VITE_AI_ENDPOINT,
+  model: env.VITE_AI_MODEL,
+  apiKey: env.VITE_AI_API_KEY,
+  mode: process.env.MODE === 'interview' ? 'interview' : 'assistant',
+  background: process.env.BACKGROUND ?? '',
+};
 
 // Each case is a conversation: the inputs in order
 const CASES = process.argv[2] ? [[['typed', process.argv[2]]]] : [
@@ -40,7 +48,7 @@ for (const inputs of CASES) {
     console.log('\n' + '='.repeat(80));
     console.log(`INPUT (${source}): ${input}`);
     console.log(`first text ${((firstText - began) / 1000).toFixed(1)}s, done ${((done - began) / 1000).toFixed(1)}s, ${text.split(/\s+/).length} words`);
-    console.log(`-- question: ${parsed.question || '(missing)'}`);
+    console.log(`-- question${parsed.depth ? ` (${parsed.depth})` : ''}: ${parsed.question || '(missing)'}`);
     console.log(`-- glance:\n${parsed.glance || '(missing)'}`);
     console.log(`-- details: ${parsed.details.split(/\s+/).filter(Boolean).length} words`);
     console.log(`-- follow-ups: ${parsed.followUps.map((f) => f.question).join(' | ') || '(none)'}`);

@@ -1,6 +1,6 @@
 // Settings, saved in the app's config.json (useConfig)
 
-import type { Tone } from './lib/ai';
+import type { AnswerMode, Tone } from './lib/ai';
 
 export type SpeechEngine = 'local' | 'cloud';
 export type AutoScroll = 'off' | 'slow' | 'medium' | 'fast';
@@ -28,6 +28,8 @@ export interface Config {
   aiEndpoint: string; // base URL, e.g. https://api.openai.com/v1
   aiModel: string; // model or deployment name
   aiApiKey: string;
+  answerMode: AnswerMode; // toyol as an assistant, or as the candidate in a mock interview (lib/ai)
+  background: string; // the user's real experience, which interview answers may draw on
   tone: Tone; // how the answers are worded (lib/ai)
   customTone: string; // the user's own description, for tone 'custom'
 
@@ -72,6 +74,8 @@ export const DEFAULT_CONFIG: Config = {
   aiEndpoint: DEV_AI.endpoint,
   aiModel: DEV_AI.model,
   aiApiKey: DEV_AI.apiKey,
+  answerMode: 'assistant',
+  background: '',
   tone: 'default',
   customTone: '',
   speechEngine: 'local',

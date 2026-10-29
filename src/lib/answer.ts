@@ -7,14 +7,20 @@ export interface FollowUp {
   answer: string; // Markdown
 }
 
+/** How deep the model chose to go, in interview mode ("Q (deep): ...") */
+export type Depth = 'quick' | 'deep';
+
 export interface ParsedAnswer {
   question: string; // as the model understood it; '' until its line arrives
+  depth?: Depth; // only when the Q line says
   glance: string; // the bold answer and key points (Markdown)
   details: string; // Markdown
   followUps: FollowUp[];
 }
 
-const Q_LINE = /^\s*(?:\*\*)?Q:(?:\*\*)?\s*([^\n]*)(\n|$)/;
+const Q_LINE = /^\s*(?:\*\*)?Q(?:\s*\((quick|deep)\))?:(?:\*\*)?\s*([^\n]*)(\n|$)/i;
+// The start of the Q line, depth and all, before its colon arrives
+const Q_START = /^\s*(?:\*\*)?(?:Q(?:\s*\(\w*\)?)?)?$/i;
 const HEADING = /^#{1,4}\s*\**\s*(details|follow[- ]?ups?)\s*\**\s*:?\s*$/gim;
 const FOLLOW_UP = /^\s*(?:[-*]|\d+\.)\s+\*\*(.+?)\*\*\s*[:\-–—]?\s*(.*)$/;
 
@@ -24,13 +30,14 @@ const dropPartialHeading = (text: string) => text.replace(/\n#{1,4}[^\n]*$/, '')
 export function parseAnswer(text: string): ParsedAnswer {
   let body = text.replace(/\r/g, '');
   let question = '';
+  let depth: Depth | undefined;
 
   const q = Q_LINE.exec(body);
   if (q) {
-    question = q[1].replace(/\*\*$/, '').trim();
+    depth = q[1]?.toLowerCase() as Depth | undefined;
+    question = q[2].replace(/\*\*$/, '').trim();
     body = body.slice(q[0].length);
-  } else if (/^\s*(?:\*\*)?Q?:?$/.test(body)) {
-    // The start of the Q line
+  } else if (Q_START.test(body)) {
     body = '';
   }
 
@@ -55,6 +62,7 @@ export function parseAnswer(text: string): ParsedAnswer {
 
   return {
     question,
+    ...(depth && { depth }),
     glance,
     details: dropPartialHeading(details).trim(),
     followUps: parseFollowUps(dropPartialHeading(followUpText)),

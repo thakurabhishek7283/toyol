@@ -9,12 +9,14 @@ mod mouse_hook;
 mod screen_capture;
 #[cfg(windows)]
 mod windows_api;
+mod license;
 mod model;
 pub mod speech;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use license::License;
 use speech::{Pass, Speech};
 use tauri::ipc::{InvokeBody, Request};
 use tauri::webview::{PermissionKind, PermissionResponse};
@@ -89,7 +91,8 @@ fn uninstall_keyboard_hook() -> Result<(), String> {
 /// Binary, so a full screen's pixels don't go through JSON.
 #[tauri::command]
 #[cfg(windows)]
-async fn capture_screen(x: i32, y: i32, width: i32, height: i32) -> Result<tauri::ipc::Response, String> {
+async fn capture_screen(license: State<'_, License>, x: i32, y: i32, width: i32, height: i32) -> Result<tauri::ipc::Response, String> {
+    license.require()?;
     tauri::async_runtime::spawn_blocking(move || screen_capture::capture(x, y, width, height))
         .await
         .map_err(|e| format!("Capture thread failed: {}", e))?
@@ -104,7 +107,8 @@ async fn capture_screen(x: i32, y: i32, width: i32, height: i32) -> Result<tauri
 /// Async: creating a window from a sync command deadlocks on Windows.
 #[tauri::command]
 #[cfg(windows)]
-async fn open_snip_window(app: tauri::AppHandle) -> Result<(), String> {
+async fn open_snip_window(app: tauri::AppHandle, license: State<'_, License>) -> Result<(), String> {
+    license.require()?;
     if app.get_webview_window(SNIP_WINDOW).is_some() {
         return Ok(());
     }
@@ -140,7 +144,8 @@ async fn open_snip_window(app: tauri::AppHandle) -> Result<(), String> {
 
 /// Load the speech model (see speech.rs). Returns what it runs on.
 #[tauri::command]
-async fn speech_load(app: tauri::AppHandle, speech: State<'_, Arc<Speech>>) -> Result<String, String> {
+async fn speech_load(app: tauri::AppHandle, speech: State<'_, Arc<Speech>>, license: State<'_, License>) -> Result<String, String> {
+    license.require()?;
     let path = speech_model_path(&app)?;
     let speech = Arc::clone(&speech);
     tauri::async_runtime::spawn_blocking(move || {
@@ -164,7 +169,8 @@ async fn speech_load(app: tauri::AppHandle, speech: State<'_, Arc<Speech>>) -> R
 /// samples. Headers: x-max-tokens, and x-final ("1" for the text that's sent).
 /// Resolves to the text, or null if the pass was cancelled.
 #[tauri::command]
-async fn speech_transcribe(request: Request<'_>, speech: State<'_, Arc<Speech>>) -> Result<Option<String>, String> {
+async fn speech_transcribe(request: Request<'_>, speech: State<'_, Arc<Speech>>, license: State<'_, License>) -> Result<Option<String>, String> {
+    license.require()?;
     let InvokeBody::Raw(body) = request.body() else {
         return Err("Expected audio".to_string());
     };
@@ -191,10 +197,23 @@ fn speech_cancel(speech: State<'_, Arc<Speech>>) {
     speech.cancel();
 }
 
+/// Whether toyol is licensed on this PC, and its code to get a key (license.rs)
+#[tauri::command]
+fn license_status(app: tauri::AppHandle, license: State<'_, License>) -> license::Status {
+    license::check(&app, &license)
+}
+
+/// Check a license key and keep it if it's this PC's
+#[tauri::command]
+fn license_activate(app: tauri::AppHandle, license: State<'_, License>, key: String) -> Result<license::Status, String> {
+    license::activate(&app, &license, &key)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(Arc::new(Speech::default()))
+        .manage(License::default())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -243,6 +262,8 @@ pub fn run() {
             speech_load,
             speech_transcribe,
             speech_cancel,
+            license_status,
+            license_activate,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
